@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Document Page Shadow -->
+    <path
+        android:fillColor="#1B365D"
+        android:pathData="M38,22 h42 c3.31,0 6,2.69 6,6 v52 c0,3.31 -2.69,6 -6,6 H38 c-3.31,0 -6,-2.69 -6,-6 V28 c0,-3.31 2.69,-6 6,-6 z" />
+
+    <!-- Document White Page -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,24 h40 c2.21,0 4,1.79 4,4 v48 c0,2.21 -1.79,4 -4,4 H36 c-2.21,0 -4,-1.79 -4,-4 V28 c0,-2.21 1.79,-4 4,-4 z" />
+
+    <!-- Document Lines (Text simulation) -->
+    <path
+        android:fillColor="#D0D7DE"
+        android:pathData="M44,34 h24 v3 H44 z M44,42 h24 v3 H44 z M44,50 h24 v3 H44 z M44,58 h16 v3 H44 z" />
+
+    <!-- Microsoft Word Signature Blue Tile Box -->
+    <path
+        android:fillColor="#185ABD"
+        android:pathData="M22,34 h34 c2.21,0 4,1.79 4,4 v34 c0,2.21 -1.79,4 -4,4 H22 c-2.21,0 -4,-1.79 -4,-4 V38 c0,-2.21 1.79,-4 4,-4 z" />
+
+    <!-- Tile Box Inner Shadow / Highlight -->
+    <path
+        android:fillColor="#236CD1"
+        android:pathData="M22,34 h34 c2.21,0 4,1.79 4,4 v16 H18 V38 c0,-2.21 1.79,-4 4,-4 z" />
+
+    <!-- Prominent Stylized 'W' -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M26,44 h4.2 l2.8,14.5 3,-14.5 h3.8 l3,14.5 2.8,-14.5 h4.2 l-4.5,20 h-4.4 L38,49.8 34.9,64 h-4.4 L26,44 z" />
+        
+</vector>

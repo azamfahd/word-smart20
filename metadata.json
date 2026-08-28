@@ -1,0 +1,8 @@
+{
+  "name": "Remix Word Editor",
+  "description": "An enterprise-grade document editor supporting rich text and file formats.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
