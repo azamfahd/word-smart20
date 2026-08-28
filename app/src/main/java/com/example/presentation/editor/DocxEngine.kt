@@ -380,6 +380,35 @@ object DocxEngine {
                     val run = p.createRun()
                     run.setText("[Shape: ${block.type.name}]")
                 }
+                is BannerBlock -> {
+                    val p = document.createParagraph()
+                    val run1 = p.createRun()
+                    run1.isBold = true
+                    run1.fontSize = 20
+                    run1.setText(block.title)
+                    if (block.subtitle.isNotEmpty()) {
+                        val run2 = p.createRun()
+                        run2.fontSize = 13
+                        run2.setText("\n" + block.subtitle)
+                    }
+                }
+                is CalloutBlock -> {
+                    val p = document.createParagraph()
+                    if (block.title.isNotEmpty()) {
+                        val run1 = p.createRun()
+                        run1.isBold = true
+                        run1.fontSize = 14
+                        run1.setText(block.title + "\n")
+                    }
+                    val run2 = p.createRun()
+                    run2.fontSize = 12
+                    run2.setText(block.text.text)
+                }
+                is DividerBlock -> {
+                    val p = document.createParagraph()
+                    val run = p.createRun()
+                    run.setText("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                }
             }
         }
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,13 +43,17 @@ fun FileMenuScreen(
                 
                 Spacer(modifier = Modifier.height(32.dp))
                 
-                FileMenuOption(Icons.Default.Info, "Info") { onEvent(RibbonEvent.OnToggleFileMenu) }
-                FileMenuOption(Icons.Default.Add, "New") { 
+                FileMenuOption(Icons.Default.Info, "المعلومات") { onEvent(RibbonEvent.OnToggleFileMenu) }
+                FileMenuOption(Icons.Default.Add, "جديد") { 
                     onEvent(RibbonEvent.OnNewDocument)
                     onEvent(RibbonEvent.OnToggleFileMenu)
                 }
-                FileMenuOption(Icons.Default.FolderOpen, "Open") { onImportRequested() }
-                FileMenuOption(Icons.Default.Save, "Save") { 
+                FileMenuOption(Icons.Default.FolderOpen, "فتح") { onImportRequested() }
+                FileMenuOption(Icons.Default.CloudUpload, "حفظ في السحابة") {
+                    onEvent(RibbonEvent.OnSaveToCloudClicked)
+                    onEvent(RibbonEvent.OnToggleFileMenu)
+                }
+                FileMenuOption(Icons.Default.Save, "حفظ كملف محلي") { 
                     if (state.currentUri != null) {
                         onEvent(RibbonEvent.OnSaveDocumentClicked)
                         onEvent(RibbonEvent.OnToggleFileMenu)
@@ -56,9 +61,9 @@ fun FileMenuScreen(
                         onEvent(RibbonEvent.OnShowSaveAsDialog)
                     }
                 }
-                FileMenuOption(Icons.Default.SaveAs, "Save As") { onEvent(RibbonEvent.OnShowSaveAsDialog) }
-                FileMenuOption(Icons.Default.Print, "Print") { onEvent(RibbonEvent.OnToggleFileMenu) }
-                FileMenuOption(Icons.Default.Close, "Close") { onEvent(RibbonEvent.OnToggleFileMenu) }
+                FileMenuOption(Icons.Default.SaveAs, "حفظ باسم") { onEvent(RibbonEvent.OnShowSaveAsDialog) }
+                FileMenuOption(Icons.Default.Print, "طباعة") { onEvent(RibbonEvent.OnToggleFileMenu) }
+                FileMenuOption(Icons.Default.Close, "إغلاق") { onEvent(RibbonEvent.OnToggleFileMenu) }
             }
             
             // Content Area
@@ -71,7 +76,7 @@ fun FileMenuScreen(
                 if (state.showSaveAsDialog) {
                     SaveAsPanel(onEvent = onEvent, onExportRequested = onExportRequested)
                 } else {
-                    Text("Document Information", style = MaterialTheme.typography.headlineMedium)
+                    Text("معلومات المستند", style = MaterialTheme.typography.headlineMedium)
                 }
             }
         }
@@ -105,13 +110,13 @@ fun SaveAsPanel(
     val formats = listOf(".docx", ".pdf", ".rtf", ".txt", ".odt", ".html")
     
     Column(modifier = Modifier.fillMaxWidth(0.6f)) {
-        Text("Save As", style = MaterialTheme.typography.headlineMedium)
+        Text("حفظ باسم", style = MaterialTheme.typography.headlineMedium)
         Spacer(modifier = Modifier.height(24.dp))
         
         OutlinedTextField(
             value = filename,
             onValueChange = { filename = it },
-            label = { Text("File Name") },
+            label = { Text("اسم الملف") },
             modifier = Modifier.fillMaxWidth()
         )
         
@@ -125,7 +130,7 @@ fun SaveAsPanel(
                 value = selectedFormat,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("Format") },
+                label = { Text("التنسيق") },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 modifier = Modifier.menuAnchor().fillMaxWidth()
             )
@@ -149,11 +154,11 @@ fun SaveAsPanel(
         
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = { onEvent(RibbonEvent.OnDismissSaveAsDialog) }) {
-                Text("Cancel")
+                Text("إلغاء")
             }
             Spacer(modifier = Modifier.width(8.dp))
             Button(onClick = { onExportRequested(filename, selectedFormat) }) {
-                Text("Browse & Save")
+                Text("تصفح وحفظ")
             }
         }
     }

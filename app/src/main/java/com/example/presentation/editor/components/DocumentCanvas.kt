@@ -11,7 +11,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +28,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.platform.LocalDensity
@@ -46,15 +52,52 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.Image
 import com.example.presentation.editor.*
 
+fun createSafeTextStyle(
+    fontSizeSp: Int,
+    fontFamilyStr: String,
+    lineSpacingFactor: Float,
+    isBold: Boolean = false,
+    isItalic: Boolean = false,
+    textColor: Color = Color.Unspecified,
+    textAlign: TextAlign = TextAlign.Unspecified,
+    isRtl: Boolean = true
+): TextStyle {
+    val family = when (fontFamilyStr) {
+        "Times New Roman" -> FontFamily.Serif
+        "Courier New" -> FontFamily.Monospace
+        else -> FontFamily.SansSerif
+    }
+    val safeLineSpacing = lineSpacingFactor.coerceAtLeast(1.0f)
+    return TextStyle(
+        fontSize = fontSizeSp.sp,
+        fontFamily = family,
+        fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+        fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
+        color = textColor,
+        textAlign = textAlign,
+        lineHeight = safeLineSpacing.em,
+        lineHeightStyle = LineHeightStyle(
+            alignment = LineHeightStyle.Alignment.Center,
+            trim = LineHeightStyle.Trim.None
+        ),
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        textDirection = if (isRtl) androidx.compose.ui.text.style.TextDirection.ContentOrRtl else androidx.compose.ui.text.style.TextDirection.Ltr
+    )
+}
+
 @Composable
 fun DocumentCanvas(
     state: EditorState,
     onEvent: (RibbonEvent) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var scale by remember { mutableFloatStateOf(1f) }
+    var scale by remember { mutableFloatStateOf(state.zoomScale) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(state.zoomScale) {
+        scale = state.zoomScale
+    }
 
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -108,16 +151,13 @@ fun DocumentCanvas(
 
             val blockHeight = when (block) {
                 is TextBlock -> {
-                    val style = TextStyle(
-                        fontSize = state.fontSize.sp,
-                        fontFamily = when (state.fontFamily) {
-                            "Times New Roman" -> FontFamily.Serif
-                            "Courier New" -> FontFamily.Monospace
-                            else -> FontFamily.SansSerif
-                        },
-                        fontWeight = if (state.isBold) FontWeight.Bold else FontWeight.Normal,
-                        fontStyle = if (state.isItalic) FontStyle.Italic else FontStyle.Normal,
-                        lineHeight = (state.fontSize.toFloat() * state.lineSpacing).sp
+                    val style = createSafeTextStyle(
+                        fontSizeSp = state.fontSize,
+                        fontFamilyStr = state.fontFamily,
+                        lineSpacingFactor = state.lineSpacing,
+                        isBold = state.isBold,
+                        isItalic = state.isItalic,
+                        isRtl = state.isRtl
                     )
                     try {
                         val result = textMeasurer.measure(
@@ -200,49 +240,201 @@ fun DocumentCanvas(
         calculatedPages
     }
 
-    Box(
+    val workspaceBgColor = when (state.viewMode) {
+        ViewMode.PRINT_LAYOUT -> Color(0xFFE5E9EE) // Desktop Office Gray workspace
+        ViewMode.WEB_LAYOUT -> Color(0xFFF1F5F9)   // Clean Web Canvas Gray
+        ViewMode.READ_MODE -> Color(0xFFFDFBF7)    // Eye-care Warm Reading Canvas
+    }
+
+    LaunchedEffect(scale) {
+        if (scale <= 1.0f) {
+            offsetX = 0f
+        }
+    }
+
+    LaunchedEffect(state.zoomScale) {
+        scale = state.zoomScale
+        if (state.zoomScale <= 1.0f) {
+            offsetX = 0f
+        }
+    }
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFFE5E9EE)) // Desktop Office Gray workspace
-            .clipToBounds()
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(0.5f, 2.5f)
-                    val panFactor = if (scale > 1f) 1f else scale
-                    offsetX += pan.x * panFactor
-                    offsetY += pan.y * panFactor
-                }
-            },
+            .background(workspaceBgColor)
+            .clipToBounds(),
         contentAlignment = Alignment.TopCenter
     ) {
-        LazyColumn(
+        val containerMaxWidth = maxWidth
+
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offsetX,
-                    translationY = offsetY
-                ),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            contentPadding = PaddingValues(vertical = 36.dp, horizontal = 24.dp)
+                .pointerInput(density) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val newScale = (scale * zoom).coerceIn(0.4f, 3.5f)
+                        scale = newScale
+                        if (newScale <= 1.0f) {
+                            offsetX = 0f
+                        } else {
+                            val canvasWidthPx = containerMaxWidth.toPx()
+                            val rawPageWidth = when(state.pageSize) {
+                                PageSize.A4 -> if (state.pageOrientation == PageOrientation.LANDSCAPE) 1123.dp else 794.dp
+                                PageSize.A3 -> if (state.pageOrientation == PageOrientation.LANDSCAPE) 1587.dp else 1123.dp
+                                PageSize.LETTER -> if (state.pageOrientation == PageOrientation.LANDSCAPE) 1056.dp else 816.dp
+                                PageSize.LEGAL -> if (state.pageOrientation == PageOrientation.LANDSCAPE) 1344.dp else 816.dp
+                                PageSize.A5 -> if (state.pageOrientation == PageOrientation.LANDSCAPE) 794.dp else 559.dp
+                            }
+                            val scaledPageWidthPx = rawPageWidth.toPx() * newScale
+                            val maxOffsetX = ((scaledPageWidthPx - canvasWidthPx) / 2f).coerceAtLeast(0f)
+                            offsetX = (offsetX + pan.x).coerceIn(-maxOffsetX, maxOffsetX)
+                        }
+                        offsetY += pan.y
+                    }
+                }
         ) {
-            itemsIndexed(pages) { pageIndex, pageBlocks ->
-                A4PageCard(
-                    pageNumber = pageIndex + 1,
-                    totalPages = pages.size,
-                    pageBlocks = pageBlocks,
-                    state = state,
-                    onEvent = onEvent
-                )
+        val (pageWidth, pageHeight) = when(state.pageSize) {
+            PageSize.A4 -> 794.dp to 1123.dp
+            PageSize.A3 -> 1123.dp to 1587.dp
+            PageSize.LETTER -> 816.dp to 1056.dp
+            PageSize.LEGAL -> 816.dp to 1344.dp
+            PageSize.A5 -> 559.dp to 794.dp
+        }
+        val targetWidth = if (state.pageOrientation == PageOrientation.LANDSCAPE) pageHeight else pageWidth
+        val targetHeight = if (state.pageOrientation == PageOrientation.LANDSCAPE) pageWidth else pageHeight
 
-                // Realistic gray gap between sequential A4 sheets
-                if (pageIndex < pages.size - 1) {
-                    Spacer(modifier = Modifier.height(28.dp))
+        val effectiveScale = scale
+        val scaledWidth = targetWidth * effectiveScale
+        val scaledHeight = targetHeight * effectiveScale
+
+        when (state.viewMode) {
+            ViewMode.PRINT_LAYOUT -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            translationX = offsetX,
+                            translationY = offsetY
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    contentPadding = PaddingValues(vertical = 20.dp, horizontal = 8.dp)
+                ) {
+                    itemsIndexed(pages) { pageIndex, pageBlocks ->
+                        Box(
+                            modifier = Modifier
+                                .size(scaledWidth, scaledHeight)
+                                .graphicsLayer(
+                                    scaleX = effectiveScale,
+                                    scaleY = effectiveScale,
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                )
+                        ) {
+                            A4PageCard(
+                                pageNumber = pageIndex + 1,
+                                totalPages = pages.size,
+                                pageBlocks = pageBlocks,
+                                state = state,
+                                onEvent = onEvent
+                            )
+                        }
+
+                        // Realistic gray gap between sequential A4 sheets
+                        if (pageIndex < pages.size - 1) {
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+                    }
+                }
+            }
+
+            ViewMode.WEB_LAYOUT -> {
+                // Continuous fluid layout (Windows Word Web Layout mode)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            translationX = offsetX,
+                            translationY = offsetY
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp)
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .widthIn(max = 900.dp)
+                                .fillMaxWidth()
+                                .shadow(4.dp, RoundedCornerShape(4.dp)),
+                            shape = RoundedCornerShape(4.dp),
+                            colors = CardDefaults.cardColors(containerColor = state.pageColor)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(28.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                state.blocks.forEach { block ->
+                                    if (block !is PageBreakBlock) {
+                                        RenderDocumentBlock(block = block, state = state, onEvent = onEvent)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ViewMode.READ_MODE -> {
+                // Distraction-free Reading view (Windows Word Reading View)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            translationX = offsetX,
+                            translationY = offsetY
+                        ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    contentPadding = PaddingValues(vertical = 24.dp, horizontal = 20.dp)
+                ) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .widthIn(max = 760.dp)
+                                .fillMaxWidth()
+                                .shadow(8.dp, RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDF9))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 40.dp, vertical = 36.dp),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Text(
+                                    text = state.documentTitle,
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E293B),
+                                    textAlign = if (state.isRtl) TextAlign.Right else TextAlign.Left,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Divider(color = Color(0xFFE2E8F0), thickness = 1.dp)
+
+                                state.blocks.forEach { block ->
+                                    if (block !is PageBreakBlock) {
+                                        RenderDocumentBlock(block = block, state = state, onEvent = onEvent)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
 }
 
 @Composable
@@ -326,6 +518,71 @@ fun A4PageCard(
         colors = CardDefaults.cardColors(containerColor = state.pageColor)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Decorative Page Accent Stripes / Header Bands based on template
+            when (state.pageStripeStyle) {
+                PageStripeStyle.SIDE_BAR_RIGHT -> {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .width(28.dp)
+                            .fillMaxHeight()
+                            .background(state.pageAccentColor ?: Color(0xFF0F766E))
+                    )
+                }
+                PageStripeStyle.SIDE_BAR_LEFT -> {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .width(28.dp)
+                            .fillMaxHeight()
+                            .background(state.pageAccentColor ?: Color(0xFF4338CA))
+                    )
+                }
+                PageStripeStyle.TOP_BAR -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(14.dp)
+                            .background(state.pageAccentColor ?: Color(0xFF1E3A8A))
+                    )
+                }
+                PageStripeStyle.LETTERHEAD_HEADER -> {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(12.dp)
+                                .background(state.pageAccentColor ?: Color(0xFF1E3A8A))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .background(state.pageSecondaryColor ?: Color(0xFF93C5FD))
+                        )
+                    }
+                }
+                PageStripeStyle.CERTIFICATE_GOLD -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp)
+                            .border(2.dp, state.pageAccentColor ?: Color(0xFFB45309))
+                            .padding(4.dp)
+                            .border(1.dp, (state.pageAccentColor ?: Color(0xFFB45309)).copy(alpha = 0.5f))
+                    )
+                }
+                PageStripeStyle.RESUME_HEADER_BAND -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .background(state.pageAccentColor ?: Color(0xFF4338CA))
+                    )
+                }
+                PageStripeStyle.NONE -> {}
+            }
+
             // Watermark Layer (Background)
             if (state.watermarkText.isNotEmpty()) {
                 Box(
@@ -440,26 +697,27 @@ fun RenderDocumentBlock(
             BasicTextField(
                 value = block.text,
                 onValueChange = { newText ->
-                    onEvent(RibbonEvent.OnDocumentTextChanged(block.id, newText))
+                    if (!state.isProtectedView) {
+                        onEvent(RibbonEvent.OnDocumentTextChanged(block.id, newText))
+                    }
                 },
+                readOnly = state.isProtectedView,
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged {
-                        if (it.isFocused) {
+                        if (it.isFocused && !state.isProtectedView) {
                             onEvent(RibbonEvent.OnBlockFocusChanged(block.id))
                         }
                     },
-                textStyle = TextStyle(
-                    fontSize = state.fontSize.sp, // Note: AnnotatedString spans will override this!
-                    fontFamily = when (state.fontFamily) {
-                        "Times New Roman" -> FontFamily.Serif
-                        "Courier New" -> FontFamily.Monospace
-                        else -> FontFamily.SansSerif
-                    },
-                    color = state.textColor, // AnnotatedString spans will override
+                textStyle = createSafeTextStyle(
+                    fontSizeSp = state.fontSize,
+                    fontFamilyStr = state.fontFamily,
+                    lineSpacingFactor = currentLineSpacing,
+                    isBold = if (isFocused) state.isBold else false,
+                    isItalic = if (isFocused) state.isItalic else false,
+                    textColor = state.textColor,
                     textAlign = alignment,
-                    lineHeight = (state.fontSize.toFloat() * currentLineSpacing).sp,
-                    textDirection = if (currentIsRtl) androidx.compose.ui.text.style.TextDirection.ContentOrRtl else androidx.compose.ui.text.style.TextDirection.Ltr
+                    isRtl = currentIsRtl
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 decorationBox = { innerTextField ->
@@ -517,6 +775,7 @@ fun RenderDocumentBlock(
                                                 BasicTextField(
                                                     value = TextFieldValue(""),
                                                     onValueChange = {},
+                                                    readOnly = state.isProtectedView,
                                                     modifier = Modifier.fillMaxWidth()
                                                 )
                                             }
@@ -566,7 +825,7 @@ fun RenderDocumentBlock(
                             Icon(
                                 imageVector = Icons.Default.Image,
                                 contentDescription = "Image Block",
-                                tint = Color(0xFF185ABD),
+                                tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(48.dp)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -617,6 +876,110 @@ fun RenderDocumentBlock(
                 Divider(modifier = Modifier.weight(1f), color = Color(0xFF94A3B8), thickness = 1.dp)
             }
         }
+
+        is BannerBlock -> {
+            val align = when (block.alignment) {
+                TextAlignment.CENTER -> Alignment.CenterHorizontally
+                TextAlignment.LEFT -> Alignment.Start
+                else -> Alignment.End
+            }
+            val textTextAlign = when (block.alignment) {
+                TextAlignment.CENTER -> TextAlign.Center
+                TextAlignment.LEFT -> TextAlign.Left
+                else -> TextAlign.Right
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                shape = RoundedCornerShape(6.dp),
+                colors = CardDefaults.cardColors(containerColor = block.backgroundColor)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalAlignment = align
+                ) {
+                    Text(
+                        text = block.title,
+                        fontSize = 22.sp,
+                        lineHeight = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = block.textColor,
+                        textAlign = textTextAlign
+                    )
+                    if (block.subtitle.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = block.subtitle,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            color = block.textColor.copy(alpha = 0.88f),
+                            textAlign = textTextAlign
+                        )
+                    }
+                }
+            }
+        }
+
+        is CalloutBlock -> {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp),
+                shape = RoundedCornerShape(6.dp),
+                colors = CardDefaults.cardColors(containerColor = block.backgroundColor),
+                border = androidx.compose.foundation.BorderStroke(1.dp, block.borderColor.copy(alpha = 0.4f))
+            ) {
+                Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                    Box(
+                        modifier = Modifier
+                            .width(6.dp)
+                            .fillMaxHeight()
+                            .background(block.borderColor)
+                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        if (block.title.isNotEmpty()) {
+                            Text(
+                                text = block.title,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = block.borderColor,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                        }
+                        BasicTextField(
+                            value = block.text,
+                            onValueChange = { newText ->
+                                onEvent(RibbonEvent.OnDocumentTextChanged(block.id, newText))
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(
+                                fontSize = 13.sp,
+                                color = block.textColor,
+                                lineHeight = 19.sp
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        is DividerBlock -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = block.paddingVerticalDp.dp)
+                    .height(block.thicknessDp.dp)
+                    .background(block.color)
+            )
+        }
     }
 }
 
@@ -630,7 +993,7 @@ fun PageHeaderZone(
     onDoubleTap: () -> Unit
 ) {
     val borderModifier = if (isEditing) {
-        Modifier.border(1.dp, Color(0xFF185ABD), RoundedCornerShape(2.dp))
+        Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
     } else Modifier
 
     Box(
@@ -691,7 +1054,7 @@ fun PageFooterZone(
     onDoubleTap: () -> Unit
 ) {
     val borderModifier = if (isEditing) {
-        Modifier.border(1.dp, Color(0xFF185ABD), RoundedCornerShape(2.dp))
+        Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
     } else Modifier
 
     Box(

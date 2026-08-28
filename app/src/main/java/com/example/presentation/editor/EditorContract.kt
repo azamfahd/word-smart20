@@ -7,11 +7,13 @@ import androidx.compose.ui.text.input.TextFieldValue
 data class EditorState(
     // Core Document Engine (Block-based for Compose & OOXML compatibility)
     val blocks: List<DocumentBlock> = listOf(
-        TextBlock("blk_initial", TextFieldValue("Start typing your document here..."))
+        TextBlock("blk_initial", TextFieldValue("ابدأ بكتابة مستندك هنا..."))
     ),
     val activeBlockId: String = "blk_initial",
-    val documentTitle: String = "Document1",
+    val documentTitle: String = "مستند1",
     val currentUri: Uri? = null,
+    val cloudDocId: String? = null,
+    val isSavingToCloud: Boolean = false,
     
     // File / Backstage View State
     val isFileMenuOpen: Boolean = false,
@@ -39,8 +41,8 @@ data class EditorState(
     val highlightColor: Color = Color.Transparent,
     
     // Paragraph State
-    val alignment: TextAlignment = TextAlignment.LEFT,
-    val isTextRtl: Boolean = false,
+    val alignment: TextAlignment = TextAlignment.RIGHT,
+    val isTextRtl: Boolean = true,
     val lineSpacing: Float = 1.15f,
     val indentLevel: Int = 0,
     val isBulletedList: Boolean = false,
@@ -55,13 +57,27 @@ data class EditorState(
     val watermarkText: String = "",
     val pageColor: Color = Color.White,
     val pageBorder: PageBorder = PageBorder(),
+    val pageStripeStyle: PageStripeStyle = PageStripeStyle.NONE,
+    val pageAccentColor: Color? = null,
+    val pageSecondaryColor: Color? = null,
     
-    // Canvas Zoom & Pan
+    // Canvas Zoom & Pan & View Customization (Windows Style)
     val zoomScale: Float = 1f,
+    val viewMode: ViewMode = ViewMode.PRINT_LAYOUT,
     
     // Localization & Typography
-    val isRtl: Boolean = false,
-    val numeralSystem: NumeralSystem = NumeralSystem.WESTERN
+    val isRtl: Boolean = true,
+    val numeralSystem: NumeralSystem = NumeralSystem.WESTERN,
+    
+    // Dialogs & Exports
+    val showWordCountDialog: Boolean = false,
+    val showFindReplaceDialog: Boolean = false,
+    val showExportPdfSuccessDialog: Boolean = false,
+    val activeGroupDetailsDialog: String? = null,
+    val exportedPdfUri: Uri? = null,
+    val isProtectedView: Boolean = false,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false
 )
 
 sealed class DocumentBlock {
@@ -71,9 +87,9 @@ sealed class DocumentBlock {
 data class TextBlock(
     override val id: String,
     val text: TextFieldValue,
-    val alignment: TextAlignment = TextAlignment.LEFT,
+    val alignment: TextAlignment = TextAlignment.RIGHT,
     val lineSpacing: Float = 1.15f,
-    val isRtl: Boolean = false
+    val isRtl: Boolean = true
 ) : DocumentBlock()
 
 data class TableCellModel(
@@ -128,6 +144,41 @@ data class PageBreakBlock(
     override val id: String
 ) : DocumentBlock()
 
+data class BannerBlock(
+    override val id: String,
+    val title: String,
+    val subtitle: String = "",
+    val backgroundColor: Color = Color(0xFF1E3A8A),
+    val textColor: Color = Color.White,
+    val alignment: TextAlignment = TextAlignment.RIGHT
+) : DocumentBlock()
+
+data class CalloutBlock(
+    override val id: String,
+    val text: TextFieldValue,
+    val title: String = "",
+    val backgroundColor: Color = Color(0xFFF1F5F9),
+    val borderColor: Color = Color(0xFF3B82F6),
+    val textColor: Color = Color(0xFF1E293B)
+) : DocumentBlock()
+
+data class DividerBlock(
+    override val id: String,
+    val color: Color = Color(0xFFCBD5E1),
+    val thicknessDp: Float = 1.5f,
+    val paddingVerticalDp: Float = 8f
+) : DocumentBlock()
+
+enum class PageStripeStyle {
+    NONE,
+    SIDE_BAR_RIGHT,
+    SIDE_BAR_LEFT,
+    TOP_BAR,
+    LETTERHEAD_HEADER,
+    RESUME_HEADER_BAND,
+    CERTIFICATE_GOLD
+}
+
 enum class WrapMode { IN_LINE, SQUARE, TIGHT, BEHIND, IN_FRONT }
 enum class ShapeType { RECTANGLE, OVAL, ARROW, LINE, STAR }
 
@@ -137,12 +188,15 @@ enum class RibbonTab(val title: String) {
     INSERT("Insert"), 
     DESIGN("Design"),
     LAYOUT("Layout"), 
+    REVIEW("Review"),
     VIEW("View")
 }
 
 enum class TextAlignment { LEFT, CENTER, RIGHT, JUSTIFY }
 enum class NumeralSystem { WESTERN, ARABIC }
 enum class UnderlineStyle { SINGLE, DOUBLE, DOTTED, NONE }
+
+enum class ViewMode { PRINT_LAYOUT, WEB_LAYOUT, READ_MODE }
 
 enum class PageSize { A4, A3, LETTER, LEGAL, A5 }
 enum class PageOrientation { PORTRAIT, LANDSCAPE }
@@ -166,6 +220,10 @@ sealed class RibbonEvent {
     data class OnDocumentImported(val model: DocumentModel, val uri: Uri? = null) : RibbonEvent()
     object OnNewDocument : RibbonEvent()
     data class OnZoomChanged(val scale: Float) : RibbonEvent()
+    data class OnViewModeChanged(val mode: ViewMode) : RibbonEvent()
+    object OnSaveToCloudClicked : RibbonEvent()
+    data class OnCloudDocIdSaved(val id: String) : RibbonEvent()
+    data class OnLoadFromCloud(val cloudDocumentId: String, val base64Data: String) : RibbonEvent()
     
     // File Menu Actions
     object OnToggleFileMenu : RibbonEvent()
@@ -233,4 +291,28 @@ sealed class RibbonEvent {
     data class OnWatermarkChanged(val text: String) : RibbonEvent()
     data class OnPageColorChanged(val color: Color) : RibbonEvent()
     data class OnPageBorderChanged(val border: PageBorder) : RibbonEvent()
+    data class OnApplyDocumentTheme(val themeName: String) : RibbonEvent()
+    
+    // Tools & Export & Dialogs
+    object OnUndoClicked : RibbonEvent()
+    object OnRedoClicked : RibbonEvent()
+    object OnIncreaseFontSizeClicked : RibbonEvent()
+    object OnDecreaseFontSizeClicked : RibbonEvent()
+    data class OnChangeCaseClicked(val caseType: String) : RibbonEvent()
+    data class OnApplyHeadingStyle(val styleName: String) : RibbonEvent()
+    object OnShowFindReplaceDialog : RibbonEvent()
+    object OnDismissFindReplaceDialog : RibbonEvent()
+    data class OnFindAndReplaceClicked(val findText: String, val replaceText: String) : RibbonEvent()
+    data class OnShowGroupDetails(val groupName: String) : RibbonEvent()
+    object OnDismissGroupDetails : RibbonEvent()
+    object OnExportPdfClicked : RibbonEvent()
+    object OnShowWordCountClicked : RibbonEvent()
+    object OnDismissWordCountClicked : RibbonEvent()
+    object OnDismissExportPdfDialog : RibbonEvent()
+    data class OnInsertBannerClicked(val title: String, val subtitle: String) : RibbonEvent()
+    data class OnInsertCalloutClicked(val title: String, val text: String) : RibbonEvent()
+    object OnInsertDividerClicked : RibbonEvent()
+    object OnInsertSignatureLineClicked : RibbonEvent()
+    data class OnInsertSymbolClicked(val symbol: String) : RibbonEvent()
+    object OnEnableEditing : RibbonEvent()
 }

@@ -3,6 +3,8 @@ package com.example.presentation.editor.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -102,6 +105,9 @@ fun localize(englishText: String, isRtl: Boolean): String {
         "Zoom In" -> "تكبير"
         "Zoom Out" -> "تصغير"
         "100%" -> "100%"
+        "Print Layout" -> "تخطيط الطباعة"
+        "Web Layout" -> "تخطيط الويب"
+        "Read Mode" -> "وضع القراءة"
         "Document Views" -> "طرق عرض المستند"
         "Multi-Page View" -> "عرض متعدد الصفحات"
         "Header/Footer" -> "الرأس/التذييل"
@@ -117,24 +123,142 @@ fun localize(englishText: String, isRtl: Boolean): String {
 @Composable
 fun WordRibbon(
     state: EditorState,
-    onEvent: (RibbonEvent) -> Unit
+    onEvent: (RibbonEvent) -> Unit,
+    onBackClick: () -> Unit,
+    onOpenFileClick: () -> Unit,
+    onSaveFileClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .border(width = 1.dp, color = Color(0xFFD0D7DE))
     ) {
-        // Ribbon Tab Headers (File, Home, Insert, Layout, View)
+        // Quick Access Toolbar (شريط الوصول السريع العلوي - Word Top Header)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFF185ABD))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Left Side: Back Arrow + Word Logo + Document Title (Safe responsive grouping)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                // Back Button (إغلاق / العودة للشاشة الرئيسية)
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "العودة",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
+                // Word Icon Brand
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = Color(0xFF107C41),
+                    modifier = Modifier.size(20.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("W", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+
+                Box(modifier = Modifier.width(1.dp).height(14.dp).background(Color(0xFF60A5FA).copy(alpha = 0.4f)))
+
+                // Document Title (No more overlapping or clashing!)
+                Text(
+                    text = "${state.documentTitle}.docx - Word",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            }
+
+            // Right Side: Quick Access Actions (Save, Open, Undo, Redo, Language) + Quick Search Box
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                QuickAccessButton(icon = Icons.Default.Save, tooltip = "حفظ") {
+                    onSaveFileClick()
+                }
+                QuickAccessButton(icon = Icons.Default.FolderOpen, tooltip = "فتح ملف") {
+                    onOpenFileClick()
+                }
+                QuickAccessButton(icon = Icons.AutoMirrored.Filled.Undo, tooltip = "تراجع", enabled = state.canUndo) {
+                    onEvent(RibbonEvent.OnUndoClicked)
+                }
+                QuickAccessButton(icon = Icons.AutoMirrored.Filled.Redo, tooltip = "إعادة", enabled = state.canRedo) {
+                    onEvent(RibbonEvent.OnRedoClicked)
+                }
+                QuickAccessButton(icon = Icons.Default.Translate, tooltip = "اتجاه الواجهة") {
+                    onEvent(RibbonEvent.OnLanguageToggled)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .width(1.dp)
+                        .height(14.dp)
+                        .background(Color(0xFF60A5FA).copy(alpha = 0.4f))
+                )
+
+                // Quick Search Box
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color(0xFF104EAD), // Elegant slightly lighter blue for search
+                    modifier = Modifier
+                        .width(85.dp)
+                        .height(24.dp)
+                        .clickable { onEvent(RibbonEvent.OnShowFindReplaceDialog) }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (state.isRtl) "بحث..." else "Search...",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 9.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        // Ribbon Tab Headers (File, Home, Insert, Design, Layout, Review, View)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Color(0xFF185ABD)) // Signature MS Word Blue
-                .padding(horizontal = 8.dp),
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp)
+                .padding(top = 4.dp),
             verticalAlignment = Alignment.Bottom
         ) {
             RibbonTab.entries.forEach { tab ->
                 RibbonTabItem(
+                    tab = tab,
                     title = localize(tab.title, state.isRtl),
                     isSelected = state.activeTab == tab,
                     onClick = { 
@@ -148,41 +272,62 @@ fun WordRibbon(
             }
         }
 
-        // Ribbon Toolbar Area
+        // Ribbon Toolbar Area - Uniform Height 96dp with Smooth Horizontal Scroll
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(Color(0xFFF3F4F6))
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .height(96.dp)
+                .background(Color(0xFFF8FAFC))
+                .border(width = (0.5).dp, color = Color(0xFFE2E8F0))
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
-            when (state.activeTab) {
-                RibbonTab.HOME -> HomeTabContent(state, onEvent)
-                RibbonTab.INSERT -> InsertTabContent(state, onEvent)
-                RibbonTab.DESIGN -> DesignTabContent(state, onEvent)
-                RibbonTab.LAYOUT -> LayoutTabContent(state, onEvent)
-                RibbonTab.VIEW -> ViewTabContent(state, onEvent)
-                else -> HomeTabContent(state, onEvent)
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                when (state.activeTab) {
+                    RibbonTab.HOME -> HomeTabContent(state, onEvent)
+                    RibbonTab.INSERT -> InsertTabContent(state, onEvent)
+                    RibbonTab.DESIGN -> DesignTabContent(state, onEvent)
+                    RibbonTab.LAYOUT -> LayoutTabContent(state, onEvent)
+                    RibbonTab.REVIEW -> ReviewTabContent(state, onEvent)
+                    RibbonTab.VIEW -> ViewTabContent(state, onEvent)
+                    else -> HomeTabContent(state, onEvent)
+                }
             }
         }
     }
 }
 
 @Composable
-fun RibbonTabItem(title: String, isSelected: Boolean, onClick: () -> Unit) {
-    val backgroundColor = if (isSelected) Color(0xFFF3F4F6) else Color.Transparent
-    val textColor = if (isSelected) Color(0xFF185ABD) else Color.White
+fun RibbonTabItem(tab: RibbonTab, title: String, isSelected: Boolean, onClick: () -> Unit) {
+    val isFileTab = tab == RibbonTab.FILE
+    val backgroundColor = when {
+        isFileTab -> Color(0xFF107C41) // Signature Word File Tab Green Accent
+        isSelected -> Color(0xFFF8FAFC)
+        else -> Color.Transparent
+    }
+    val textColor = when {
+        isFileTab -> Color.White
+        isSelected -> Color(0xFF185ABD) // Signature MS Word Blue instead of clashing theme color
+        else -> Color.White.copy(alpha = 0.9f)
+    }
 
     Box(
         modifier = Modifier
-            .background(backgroundColor, shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+            .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+            .background(backgroundColor)
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 8.dp)
+            .padding(horizontal = 14.dp, vertical = 6.dp)
     ) {
         Text(
-            text = title.uppercase(),
+            text = title, // Capitalized "Home", "Insert" instead of screamed uppercase "HOME"
             color = textColor,
-            fontSize = 12.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+            fontSize = 11.sp,
+            fontWeight = if (isSelected || isFileTab) FontWeight.Bold else FontWeight.Medium
         )
     }
 }
@@ -194,6 +339,8 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showLineSpacingMenu by remember { mutableStateOf(false) }
     var showTextColorMenu by remember { mutableStateOf(false) }
     var showHighlightMenu by remember { mutableStateOf(false) }
+    var showCaseMenu by remember { mutableStateOf(false) }
+    var showStylesMenu by remember { mutableStateOf(false) }
 
     val fontFamilies = listOf(
         "Calibri", "Arial", "Times New Roman", "Tahoma", "Segoe UI",
@@ -221,11 +368,20 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     )
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 1. Clipboard Group
-        RibbonGroup(localize("Clipboard", state.isRtl)) {
+        // 1. Undo / Redo Group
+        RibbonGroup(localize("Undo", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Undo")) }) {
+            Column {
+                RibbonSmallButton(Icons.AutoMirrored.Filled.Undo, localize("Undo", state.isRtl)) { onEvent(RibbonEvent.OnUndoClicked) }
+                RibbonSmallButton(Icons.AutoMirrored.Filled.Redo, localize("Redo", state.isRtl)) { onEvent(RibbonEvent.OnRedoClicked) }
+            }
+        }
+
+        VerticalDivider()
+
+        // 2. Clipboard Group
+        RibbonGroup(localize("Clipboard", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Clipboard")) }) {
             RibbonLargeButton(Icons.Default.ContentPaste, localize("Paste", state.isRtl)) { onEvent(RibbonEvent.OnPasteClicked) }
             Column {
                 RibbonSmallButton(Icons.Default.ContentCut, localize("Cut", state.isRtl)) { onEvent(RibbonEvent.OnCutClicked) }
@@ -235,13 +391,13 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 
         VerticalDivider()
 
-        // 2. Font Group (Fully Interactive)
-        RibbonGroup(localize("Font", state.isRtl)) {
+        // 3. Font Group (Exhaustive MS Word Font Settings)
+        RibbonGroup(localize("Font", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Font")) }) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Row 1: Font Family, Size, Clear Formatting
+                // Row 1: Font Family, Size, Increase/Decrease, Case, Clear Formatting
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box {
-                        DropdownSelector(text = state.fontFamily, width = 120.dp) { showFontMenu = true }
+                        DropdownSelector(text = state.fontFamily, width = 110.dp) { showFontMenu = true }
                         DropdownMenu(expanded = showFontMenu, onDismissRequest = { showFontMenu = false }) {
                             fontFamilies.forEach { font ->
                                 DropdownMenuItem(
@@ -256,7 +412,7 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                     }
 
                     Box {
-                        DropdownSelector(text = state.fontSize.toString(), width = 56.dp) { showSizeMenu = true }
+                        DropdownSelector(text = state.fontSize.toString(), width = 52.dp) { showSizeMenu = true }
                         DropdownMenu(expanded = showSizeMenu, onDismissRequest = { showSizeMenu = false }) {
                             fontSizes.forEach { size ->
                                 DropdownMenuItem(
@@ -270,7 +426,19 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    RibbonButton(Icons.Default.FormatSize) { onEvent(RibbonEvent.OnIncreaseFontSizeClicked) }
+
+                    // Change Case Dropdown (Aa)
+                    Box {
+                        RibbonButton(Icons.Default.TextFields) { showCaseMenu = true }
+                        DropdownMenu(expanded = showCaseMenu, onDismissRequest = { showCaseMenu = false }) {
+                            DropdownMenuItem(text = { Text(if (state.isRtl) "حالة الجملة (Sentence case)" else "Sentence case") }, onClick = { onEvent(RibbonEvent.OnChangeCaseClicked("Sentence case")); showCaseMenu = false })
+                            DropdownMenuItem(text = { Text(if (state.isRtl) "حروف صغيرة (lowercase)" else "lowercase") }, onClick = { onEvent(RibbonEvent.OnChangeCaseClicked("lowercase")); showCaseMenu = false })
+                            DropdownMenuItem(text = { Text(if (state.isRtl) "حروف كبيرة (UPPERCASE)" else "UPPERCASE") }, onClick = { onEvent(RibbonEvent.OnChangeCaseClicked("UPPERCASE")); showCaseMenu = false })
+                            DropdownMenuItem(text = { Text(if (state.isRtl) "كبّر كل كلمة (Capitalize Each Word)" else "Capitalize Each Word") }, onClick = { onEvent(RibbonEvent.OnChangeCaseClicked("Capitalize Each Word")); showCaseMenu = false })
+                        }
+                    }
+
                     RibbonButton(Icons.Default.FormatClear) { onEvent(RibbonEvent.OnClearFormattingClicked) }
                 }
 
@@ -334,10 +502,9 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 
         VerticalDivider()
 
-        // 3. Paragraph Group (Exhaustive & Fully Interactive)
-        RibbonGroup(localize("Paragraph", state.isRtl)) {
+        // 4. Paragraph Group
+        RibbonGroup(localize("Paragraph", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Paragraph")) }) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Lists, Indentation, Numeral System Toggle
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                     RibbonToggleButton(Icons.Default.FormatListBulleted, state.isBulletedList) { onEvent(RibbonEvent.OnBulletedListToggled) }
                     RibbonToggleButton(Icons.Default.FormatListNumbered, state.isNumberedList) { onEvent(RibbonEvent.OnNumberedListToggled) }
@@ -346,7 +513,6 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                     RibbonButton(Icons.AutoMirrored.Filled.FormatIndentIncrease) { onEvent(RibbonEvent.OnIncreaseIndentClicked) }
                     Spacer(modifier = Modifier.width(4.dp))
                     
-                    // Numeral System Toggle (123 vs ١٢٣)
                     RibbonToggleButton(
                         icon = Icons.Default.Numbers,
                         isChecked = state.numeralSystem == NumeralSystem.ARABIC
@@ -356,7 +522,6 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                     }
                 }
 
-                // Alignments, Line Spacing, Text Direction
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                     RibbonToggleButton(Icons.AutoMirrored.Filled.FormatAlignLeft, state.alignment == TextAlignment.LEFT) { onEvent(RibbonEvent.OnAlignmentChanged(TextAlignment.LEFT)) }
                     RibbonToggleButton(Icons.Default.FormatAlignCenter, state.alignment == TextAlignment.CENTER) { onEvent(RibbonEvent.OnAlignmentChanged(TextAlignment.CENTER)) }
@@ -365,9 +530,8 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    // Line Spacing Dropdown
                     Box {
-                        DropdownSelector(text = "${state.lineSpacing}", width = 64.dp) { showLineSpacingMenu = true }
+                        DropdownSelector(text = "${state.lineSpacing}", width = 56.dp) { showLineSpacingMenu = true }
                         DropdownMenu(expanded = showLineSpacingMenu, onDismissRequest = { showLineSpacingMenu = false }) {
                             lineSpacings.forEach { spacing ->
                                 DropdownMenuItem(
@@ -387,26 +551,52 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                 }
             }
         }
+
+        VerticalDivider()
+
+        // 5. Styles Group
+        RibbonGroup(localize("Styles", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Styles")) }) {
+            Box {
+                RibbonLargeButton(Icons.Default.Title, localize("Styles", state.isRtl)) { showStylesMenu = true }
+                DropdownMenu(expanded = showStylesMenu, onDismissRequest = { showStylesMenu = false }) {
+                    DropdownMenuItem(text = { Text("عادي (Normal)") }, onClick = { onEvent(RibbonEvent.OnApplyHeadingStyle("Normal")); showStylesMenu = false })
+                    DropdownMenuItem(text = { Text("العنوان الرئيسي (Title)", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF1E3A8A)) }, onClick = { onEvent(RibbonEvent.OnApplyHeadingStyle("Title")); showStylesMenu = false })
+                    DropdownMenuItem(text = { Text("العنوان الفرعي (Subtitle)", fontSize = 14.sp, color = Color(0xFF4B5563)) }, onClick = { onEvent(RibbonEvent.OnApplyHeadingStyle("Subtitle")); showStylesMenu = false })
+                    DropdownMenuItem(text = { Text("عنوان 1 (Heading 1)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2563EB)) }, onClick = { onEvent(RibbonEvent.OnApplyHeadingStyle("Heading 1")); showStylesMenu = false })
+                    DropdownMenuItem(text = { Text("عنوان 2 (Heading 2)", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF1D4ED8)) }, onClick = { onEvent(RibbonEvent.OnApplyHeadingStyle("Heading 2")); showStylesMenu = false })
+                    DropdownMenuItem(text = { Text("عنوان 3 (Heading 3)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF374151)) }, onClick = { onEvent(RibbonEvent.OnApplyHeadingStyle("Heading 3")); showStylesMenu = false })
+                }
+            }
+        }
+
+        VerticalDivider()
+
+        // 6. Editing Group
+        RibbonGroup(localize("Editing", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Editing")) }) {
+            RibbonLargeButton(Icons.Default.FindReplace, localize("Find & Replace", state.isRtl)) {
+                onEvent(RibbonEvent.OnShowFindReplaceDialog)
+            }
+        }
     }
 }
 
 @Composable
 fun InsertTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showShapeMenu by remember { mutableStateOf(false) }
+    var showSymbolMenu by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RibbonGroup(localize("Pages", state.isRtl)) {
+        RibbonGroup(localize("Pages", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Pages")) }) {
             RibbonLargeButton(Icons.Default.InsertPageBreak, localize("Page Break", state.isRtl)) { onEvent(RibbonEvent.OnInsertPageBreakClicked) }
         }
         VerticalDivider()
-        RibbonGroup(localize("Tables", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.TableChart, localize("3x3 Table", state.isRtl)) { onEvent(RibbonEvent.OnInsertTableClicked(3, 3)) }
+        RibbonGroup(localize("Tables", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Tables")) }) {
+            RibbonLargeButton(Icons.Default.TableChart, localize("Table", state.isRtl)) { onEvent(RibbonEvent.OnInsertTableClicked(3, 3)) }
         }
         VerticalDivider()
-        RibbonGroup(localize("Illustrations", state.isRtl)) {
+        RibbonGroup(localize("Illustrations", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Illustrations")) }) {
             RibbonLargeButton(Icons.Default.Image, localize("Picture", state.isRtl)) { onEvent(RibbonEvent.OnInsertImageWithUri("embedded_image.png")) }
             Box {
                 RibbonLargeButton(Icons.Default.Category, localize("Shapes", state.isRtl)) { showShapeMenu = true }
@@ -424,11 +614,43 @@ fun InsertTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
             }
         }
         VerticalDivider()
-        RibbonGroup(localize("Header & Footer", state.isRtl)) {
+        RibbonGroup(localize("Decorations & Banners", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Decorations & Banners")) }) {
+            RibbonLargeButton(Icons.Default.WebAsset, localize("Banner", state.isRtl)) {
+                onEvent(RibbonEvent.OnInsertBannerClicked("عنوان الترويسة الرئيسي", "مستندك المحترف"))
+            }
+            RibbonLargeButton(Icons.Default.MarkUnreadChatAlt, localize("Callout", state.isRtl)) {
+                onEvent(RibbonEvent.OnInsertCalloutClicked("ملاحظة هامة", "أدخل الملاحظة البارزة هنا..."))
+            }
+            RibbonLargeButton(Icons.Default.HorizontalRule, localize("Divider", state.isRtl)) {
+                onEvent(RibbonEvent.OnInsertDividerClicked)
+            }
+        }
+        VerticalDivider()
+        RibbonGroup(localize("Header & Footer", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Header & Footer")) }) {
             Column {
                 RibbonSmallButton(Icons.Default.BorderTop, localize("Header", state.isRtl)) { onEvent(RibbonEvent.OnToggleHeaderFooterMode) }
                 RibbonSmallButton(Icons.Default.BorderBottom, localize("Footer", state.isRtl)) { onEvent(RibbonEvent.OnToggleHeaderFooterMode) }
                 RibbonSmallButton(Icons.Default.Numbers, localize("Page Number", state.isRtl)) { onEvent(RibbonEvent.OnInsertPageNumberClicked) }
+            }
+        }
+        VerticalDivider()
+        RibbonGroup(localize("Symbols & Math", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Symbols & Math")) }) {
+            Box {
+                RibbonLargeButton(Icons.Default.Functions, localize("Symbols", state.isRtl)) { showSymbolMenu = true }
+                DropdownMenu(expanded = showSymbolMenu, onDismissRequest = { showSymbolMenu = false }) {
+                    listOf("∑", "π", "√", "∞", "±", "≤", "≥", "≠", "α", "β", "Ω", "∆", "€", "$", "£", "¥").forEach { sym ->
+                        DropdownMenuItem(
+                            text = { Text(sym, fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+                            onClick = {
+                                onEvent(RibbonEvent.OnInsertSymbolClicked(sym))
+                                showSymbolMenu = false
+                            }
+                        )
+                    }
+                }
+            }
+            RibbonLargeButton(Icons.Default.Draw, localize("Signature", state.isRtl)) {
+                onEvent(RibbonEvent.OnInsertSignatureLineClicked)
             }
         }
     }
@@ -438,19 +660,35 @@ fun InsertTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 fun DesignTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showWatermarkMenu by remember { mutableStateOf(false) }
     var showPageColorMenu by remember { mutableStateOf(false) }
+    var showThemeMenu by remember { mutableStateOf(false) }
     var showBordersDialog by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RibbonGroup(localize("Page Background", state.isRtl)) {
+        RibbonGroup(localize("Document Formatting", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Document Formatting")) }) {
+            Box {
+                RibbonLargeButton(Icons.Default.Palette, localize("Themes", state.isRtl)) { showThemeMenu = true }
+                DropdownMenu(expanded = showThemeMenu, onDismissRequest = { showThemeMenu = false }) {
+                    DropdownMenuItem(text = { Text(localize("Office (Standard)", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnApplyDocumentTheme("Office")); showThemeMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Modern Clean", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnApplyDocumentTheme("Modern")); showThemeMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Formal Paper", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnApplyDocumentTheme("Formal")); showThemeMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Classic Style", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnApplyDocumentTheme("Classic")); showThemeMenu = false })
+                }
+            }
+            RibbonLargeButton(Icons.Default.Style, localize("Style Set", state.isRtl)) {
+                onEvent(RibbonEvent.OnFontFamilyChanged("Calibri"))
+            }
+        }
+        VerticalDivider()
+        RibbonGroup(localize("Page Background", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Page Background")) }) {
             // Watermark
             Box {
                 RibbonLargeButton(Icons.Default.WaterDrop, localize("Watermark", state.isRtl)) { showWatermarkMenu = true }
                 DropdownMenu(expanded = showWatermarkMenu, onDismissRequest = { showWatermarkMenu = false }) {
                     DropdownMenuItem(text = { Text(localize("Draft", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnWatermarkChanged("DRAFT")); showWatermarkMenu = false })
                     DropdownMenuItem(text = { Text(localize("Confidential", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnWatermarkChanged("CONFIDENTIAL")); showWatermarkMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Urgent", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnWatermarkChanged("URGENT")); showWatermarkMenu = false })
                     Divider()
                     DropdownMenuItem(text = { Text(localize("Remove Watermark", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnWatermarkChanged("")); showWatermarkMenu = false })
                 }
@@ -461,8 +699,9 @@ fun DesignTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                 RibbonLargeButton(Icons.Default.FormatColorFill, localize("Page Color", state.isRtl)) { showPageColorMenu = true }
                 DropdownMenu(expanded = showPageColorMenu, onDismissRequest = { showPageColorMenu = false }) {
                     DropdownMenuItem(text = { Text(localize("White", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color.White)); showPageColorMenu = false })
-                    DropdownMenuItem(text = { Text(localize("Cream", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFFFFDD0))); showPageColorMenu = false })
-                    DropdownMenuItem(text = { Text(localize("Light Gray", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFF3F4F6))); showPageColorMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Cream Warm", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFFFFDD0))); showPageColorMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Light Slate", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFF3F4F6))); showPageColorMenu = false })
+                    DropdownMenuItem(text = { Text(localize("Soft Blue", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFEFF6FF))); showPageColorMenu = false })
                 }
             }
 
@@ -480,6 +719,37 @@ fun DesignTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                 showBordersDialog = false
             }
         )
+    }
+}
+
+@Composable
+fun ReviewTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RibbonGroup(localize("Proofing & Stats", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Proofing & Stats")) }) {
+            RibbonLargeButton(Icons.Default.Analytics, localize("Word Count", state.isRtl)) {
+                onEvent(RibbonEvent.OnShowWordCountClicked)
+            }
+            RibbonLargeButton(Icons.Default.Spellcheck, localize("Proofing", state.isRtl)) {
+                onEvent(RibbonEvent.OnLanguageToggled)
+            }
+        }
+        VerticalDivider()
+        RibbonGroup(localize("Smart AI Tools", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Smart AI Tools")) }) {
+            RibbonLargeButton(Icons.Default.AutoAwesome, localize("AI Enhancer", state.isRtl)) {
+                onEvent(RibbonEvent.OnShowWordCountClicked)
+            }
+            RibbonLargeButton(Icons.Default.FormatClear, localize("Clear Format", state.isRtl)) {
+                onEvent(RibbonEvent.OnClearFormattingClicked)
+            }
+        }
+        VerticalDivider()
+        RibbonGroup(localize("PDF Export", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("PDF Export")) }) {
+            RibbonLargeButton(Icons.Default.PictureAsPdf, localize("Export PDF", state.isRtl)) {
+                onEvent(RibbonEvent.OnExportPdfClicked)
+            }
+        }
     }
 }
 
@@ -587,7 +857,6 @@ fun LayoutTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showSizeMenu by remember { mutableStateOf(false) }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         RibbonGroup(localize("Page Setup", state.isRtl)) {
@@ -645,17 +914,40 @@ fun LayoutTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 @Composable
 fun ViewTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        RibbonGroup(localize("Document Views", state.isRtl)) {
+            if (state.isProtectedView) {
+                RibbonLargeButton(
+                    icon = Icons.Default.Edit,
+                    label = localize("Edit Document", state.isRtl),
+                    onClick = { onEvent(RibbonEvent.OnEnableEditing) }
+                )
+            }
+            RibbonLargeButton(
+                icon = Icons.Default.ViewAgenda,
+                label = localize("Print Layout", state.isRtl),
+                onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.PRINT_LAYOUT)) }
+            )
+            RibbonLargeButton(
+                icon = Icons.Default.Language,
+                label = localize("Web Layout", state.isRtl),
+                onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT)) }
+            )
+            RibbonLargeButton(
+                icon = Icons.Default.MenuBook,
+                label = localize("Read Mode", state.isRtl),
+                onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.READ_MODE)) }
+            )
+        }
+        VerticalDivider()
         RibbonGroup(localize("Zoom", state.isRtl)) {
             RibbonLargeButton(Icons.Default.ZoomIn, localize("Zoom In", state.isRtl)) { onEvent(RibbonEvent.OnZoomChanged(state.zoomScale + 0.2f)) }
             RibbonLargeButton(Icons.Default.ZoomOut, localize("Zoom Out", state.isRtl)) { onEvent(RibbonEvent.OnZoomChanged(state.zoomScale - 0.2f)) }
             RibbonLargeButton(Icons.Default.RestartAlt, localize("100%", state.isRtl)) { onEvent(RibbonEvent.OnZoomChanged(1.0f)) }
         }
         VerticalDivider()
-        RibbonGroup(localize("Document Views", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.ViewAgenda, localize("Multi-Page View", state.isRtl)) { /* Default active */ }
+        RibbonGroup(localize("Header & Footer", state.isRtl)) {
             RibbonLargeButton(Icons.Default.EditNote, localize("Header/Footer", state.isRtl)) { onEvent(RibbonEvent.OnToggleHeaderFooterMode) }
         }
     }
@@ -664,18 +956,66 @@ fun ViewTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 // --- Reusable Ribbon Widgets ---
 
 @Composable
-fun RibbonGroup(title: String, content: @Composable RowScope.() -> Unit) {
+fun RibbonGroup(
+    title: String,
+    onLaunchDetails: (() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 10.dp)
+        modifier = Modifier.padding(horizontal = 8.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             content = content
         )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(text = title, fontSize = 11.sp, color = Color(0xFF64748B))
+        Spacer(modifier = Modifier.height(2.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Text(text = title, fontSize = 11.sp, color = Color(0xFF64748B))
+            if (onLaunchDetails != null) {
+                Spacer(modifier = Modifier.width(3.dp))
+                Box(
+                    modifier = Modifier
+                        .size(14.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0xFFE2E8F0))
+                        .clickable { onLaunchDetails() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.NorthEast,
+                        contentDescription = "Group Launcher Arrow",
+                        tint = Color(0xFF475569),
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun QuickAccessButton(
+    icon: ImageVector,
+    tooltip: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(24.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = tooltip,
+            tint = if (enabled) Color.White else Color.White.copy(alpha = 0.4f),
+            modifier = Modifier.size(15.dp)
+        )
     }
 }
 

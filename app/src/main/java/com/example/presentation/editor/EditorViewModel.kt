@@ -32,6 +32,16 @@ class EditorViewModel : ViewModel() {
     private val _state = MutableStateFlow(EditorState())
     val state: StateFlow<EditorState> = _state.asStateFlow()
 
+    private val undoStack = mutableListOf<List<DocumentBlock>>()
+    private val redoStack = mutableListOf<List<DocumentBlock>>()
+
+    private fun pushUndoState() {
+        if (undoStack.size > 50) undoStack.removeAt(0)
+        undoStack.add(_state.value.blocks)
+        redoStack.clear()
+        _state.update { it.copy(canUndo = true, canRedo = false) }
+    }
+
     fun loadFromUri(uri: Uri, context: Context) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
@@ -63,18 +73,82 @@ class EditorViewModel : ViewModel() {
 
     fun createNewBlankDocument() {
         _state.value = EditorState(
-            blocks = listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(""))),
-            documentTitle = "Document1",
+            blocks = listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("ابدأ بكتابة مستندك هنا..."))),
+            documentTitle = "مستند1",
+            currentUri = null,
+            isFileMenuOpen = false
+        )
+    }
+    
+    fun createNewDocumentFromTemplate(
+        title: String,
+        blocks: List<DocumentBlock>,
+        pageBorder: PageBorder = PageBorder(),
+        pageColor: Color = Color.White,
+        pageOrientation: PageOrientation = PageOrientation.PORTRAIT,
+        pageSize: PageSize = PageSize.A4,
+        pageMargin: PageMargin = PageMargin.NORMAL,
+        headerText: TextFieldValue = TextFieldValue(""),
+        footerText: TextFieldValue = TextFieldValue(""),
+        pageStripeStyle: PageStripeStyle = PageStripeStyle.NONE,
+        pageAccentColor: Color? = null,
+        pageSecondaryColor: Color? = null
+    ) {
+        _state.value = EditorState(
+            blocks = blocks,
+            activeBlockId = blocks.firstOrNull()?.id ?: "blk_${UUID.randomUUID()}",
+            documentTitle = title,
+            pageBorder = pageBorder,
+            pageColor = pageColor,
+            pageOrientation = pageOrientation,
+            pageSize = pageSize,
+            pageMargin = pageMargin,
+            headerText = headerText,
+            footerText = footerText,
+            pageStripeStyle = pageStripeStyle,
+            pageAccentColor = pageAccentColor,
+            pageSecondaryColor = pageSecondaryColor,
+            isProtectedView = true,
             currentUri = null,
             isFileMenuOpen = false
         )
     }
 
+    fun clearSavingToCloudFlag() {
+        _state.update { it.copy(isSavingToCloud = false) }
+    }
+
     fun processEvent(event: RibbonEvent) {
         when (event) {
+            is RibbonEvent.OnEnableEditing -> {
+                _state.update { it.copy(isProtectedView = false) }
+            }
+            is RibbonEvent.OnSaveToCloudClicked -> {
+                // Handled in UI layer where we have context and auth
+                _state.update { it.copy(isSavingToCloud = true) }
+            }
+            is RibbonEvent.OnCloudDocIdSaved -> {
+                _state.update { it.copy(cloudDocId = event.id) }
+            }
+            is RibbonEvent.OnLoadFromCloud -> {
+                try {
+                    val bytes = android.util.Base64.decode(event.base64Data, android.util.Base64.DEFAULT)
+                    val blocks = DocxImporter().import(java.io.ByteArrayInputStream(bytes))
+                    _state.update {
+                        it.copy(
+                            blocks = blocks,
+                            activeBlockId = blocks.firstOrNull()?.id ?: "blk_initial",
+                            cloudDocId = event.cloudDocumentId
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("EditorViewModel", "Failed to load from cloud", e)
+                }
+            }
             is RibbonEvent.ChangeTab -> _state.update { it.copy(activeTab = event.tab) }
             is RibbonEvent.OnLanguageToggled -> _state.update { it.copy(isRtl = !it.isRtl) }
-            is RibbonEvent.OnZoomChanged -> _state.update { it.copy(zoomScale = event.scale.coerceIn(0.5f, 2.5f)) }
+            is RibbonEvent.OnZoomChanged -> _state.update { it.copy(zoomScale = event.scale.coerceIn(0.4f, 3.5f)) }
+            is RibbonEvent.OnViewModeChanged -> _state.update { it.copy(viewMode = event.mode) }
             
             is RibbonEvent.OnDocumentImported -> {
                 _state.update {
@@ -90,12 +164,12 @@ class EditorViewModel : ViewModel() {
                 }
             }
             is RibbonEvent.OnNewDocument -> {
-                val initialBlock = TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(""))
+                val initialBlock = TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("ابدأ بكتابة مستندك هنا..."))
                 _state.update {
                     it.copy(
                         blocks = listOf(initialBlock),
                         activeBlockId = initialBlock.id,
-                        documentTitle = "Document1",
+                        documentTitle = "مستند1",
                         headerText = TextFieldValue(""),
                         footerText = TextFieldValue(""),
                         currentUri = null,
@@ -291,6 +365,153 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnWatermarkChanged -> { _state.update { it.copy(watermarkText = event.text) } }
             is RibbonEvent.OnPageColorChanged -> { _state.update { it.copy(pageColor = event.color) } }
             is RibbonEvent.OnPageBorderChanged -> { _state.update { it.copy(pageBorder = event.border) } }
+            is RibbonEvent.OnApplyDocumentTheme -> {
+                when (event.themeName) {
+                    "Office" -> _state.update { it.copy(fontFamily = "Calibri", textColor = Color.Black, pageColor = Color.White) }
+                    "Modern" -> _state.update { it.copy(fontFamily = "Arial", textColor = Color(0xFF1E293B), pageColor = Color(0xFFF8FAFC)) }
+                    "Formal" -> _state.update { it.copy(fontFamily = "Times New Roman", textColor = Color(0xFF0F172A), pageColor = Color(0xFFFFFDF5)) }
+                    "Classic" -> _state.update { it.copy(fontFamily = "Georgia", textColor = Color(0xFF1A1A1A), pageColor = Color(0xFFFAFAFA)) }
+                }
+            }
+
+            // Tools & Export & Dialogs
+            is RibbonEvent.OnUndoClicked -> {
+                if (undoStack.isNotEmpty()) {
+                    val prev = undoStack.removeAt(undoStack.lastIndex)
+                    redoStack.add(_state.value.blocks)
+                    _state.update {
+                        it.copy(
+                            blocks = prev,
+                            canUndo = undoStack.isNotEmpty(),
+                            canRedo = true
+                        )
+                    }
+                }
+            }
+            is RibbonEvent.OnRedoClicked -> {
+                if (redoStack.isNotEmpty()) {
+                    val next = redoStack.removeAt(redoStack.lastIndex)
+                    undoStack.add(_state.value.blocks)
+                    _state.update {
+                        it.copy(
+                            blocks = next,
+                            canUndo = true,
+                            canRedo = redoStack.isNotEmpty()
+                        )
+                    }
+                }
+            }
+            is RibbonEvent.OnIncreaseFontSizeClicked -> {
+                pushUndoState()
+                val newSize = (_state.value.fontSize + 2).coerceAtMost(72)
+                _state.update { it.copy(fontSize = newSize) }
+                applyStyleToSelection(SpanStyle(fontSize = newSize.sp))
+            }
+            is RibbonEvent.OnDecreaseFontSizeClicked -> {
+                pushUndoState()
+                val newSize = (_state.value.fontSize - 2).coerceAtLeast(6)
+                _state.update { it.copy(fontSize = newSize) }
+                applyStyleToSelection(SpanStyle(fontSize = newSize.sp))
+            }
+            is RibbonEvent.OnChangeCaseClicked -> {
+                pushUndoState()
+                changeTextCase(event.caseType)
+            }
+            is RibbonEvent.OnApplyHeadingStyle -> {
+                pushUndoState()
+                applyHeadingStyle(event.styleName)
+            }
+            is RibbonEvent.OnShowFindReplaceDialog -> _state.update { it.copy(showFindReplaceDialog = true) }
+            is RibbonEvent.OnDismissFindReplaceDialog -> _state.update { it.copy(showFindReplaceDialog = false) }
+            is RibbonEvent.OnFindAndReplaceClicked -> {
+                pushUndoState()
+                performFindAndReplace(event.findText, event.replaceText)
+            }
+            is RibbonEvent.OnShowGroupDetails -> _state.update { it.copy(activeGroupDetailsDialog = event.groupName) }
+            is RibbonEvent.OnDismissGroupDetails -> _state.update { it.copy(activeGroupDetailsDialog = null) }
+            is RibbonEvent.OnExportPdfClicked -> {}
+            is RibbonEvent.OnShowWordCountClicked -> _state.update { it.copy(showWordCountDialog = true) }
+            is RibbonEvent.OnDismissWordCountClicked -> _state.update { it.copy(showWordCountDialog = false) }
+            is RibbonEvent.OnDismissExportPdfDialog -> _state.update { it.copy(showExportPdfSuccessDialog = false) }
+            is RibbonEvent.OnInsertBannerClicked -> insertBlockAtCursor(BannerBlock("bnr_${UUID.randomUUID()}", title = event.title, subtitle = event.subtitle))
+            is RibbonEvent.OnInsertCalloutClicked -> insertBlockAtCursor(CalloutBlock("clt_${UUID.randomUUID()}", title = event.title, text = TextFieldValue(event.text)))
+            is RibbonEvent.OnInsertDividerClicked -> insertBlockAtCursor(DividerBlock("div_${UUID.randomUUID()}"))
+            is RibbonEvent.OnInsertSignatureLineClicked -> insertBlockAtCursor(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("\n_________________________\nالتوقيع / Signature\n")))
+            is RibbonEvent.OnInsertSymbolClicked -> {
+                pushUndoState()
+                val activeIdx = _state.value.blocks.indexOfFirst { it.id == _state.value.activeBlockId }
+                if (activeIdx != -1 && _state.value.blocks[activeIdx] is TextBlock) {
+                    val tb = _state.value.blocks[activeIdx] as TextBlock
+                    val newText = tb.text.text + event.symbol
+                    val updated = tb.copy(text = tb.text.copy(text = newText))
+                    val newBlocks = _state.value.blocks.toMutableList()
+                    newBlocks[activeIdx] = updated
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
+            }
+        }
+    }
+
+    private fun changeTextCase(caseType: String) {
+        val stateVal = _state.value
+        val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+        if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+            val tb = stateVal.blocks[activeIdx] as TextBlock
+            val original = tb.text.text
+            val newTextStr = when (caseType) {
+                "UPPERCASE" -> original.uppercase()
+                "lowercase" -> original.lowercase()
+                "Capitalize Each Word" -> original.split(" ").joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } }
+                "Sentence case" -> original.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+                else -> original
+            }
+            val updated = tb.copy(text = tb.text.copy(text = newTextStr))
+            val newBlocks = stateVal.blocks.toMutableList()
+            newBlocks[activeIdx] = updated
+            _state.update { it.copy(blocks = newBlocks) }
+        }
+    }
+
+    private fun applyHeadingStyle(styleName: String) {
+        val stateVal = _state.value
+        val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+        if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+            val (size, isBold, color) = when (styleName) {
+                "Title" -> Triple(24, true, Color(0xFF1E3A8A))
+                "Subtitle" -> Triple(14, false, Color(0xFF4B5563))
+                "Heading 1" -> Triple(20, true, Color(0xFF2563EB))
+                "Heading 2" -> Triple(16, true, Color(0xFF1D4ED8))
+                "Heading 3" -> Triple(14, true, Color(0xFF374151))
+                else -> Triple(12, false, Color.Black)
+            }
+            _state.update { it.copy(fontSize = size, isBold = isBold, textColor = color) }
+            applyStyleToSelection(SpanStyle(fontSize = size.sp, fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal, color = color))
+        }
+    }
+
+    private fun performFindAndReplace(findText: String, replaceText: String) {
+        if (findText.isEmpty()) return
+        val stateVal = _state.value
+        val newBlocks = stateVal.blocks.map { block ->
+            if (block is TextBlock) {
+                val replacedStr = block.text.text.replace(findText, replaceText, ignoreCase = true)
+                block.copy(text = block.text.copy(text = replacedStr))
+            } else block
+        }
+        _state.update { it.copy(blocks = newBlocks, showFindReplaceDialog = false) }
+    }
+
+    fun exportPdf(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val uri = PdfExporter().exportToPdf(context, _state.value)
+            withContext(Dispatchers.Main) {
+                _state.update {
+                    it.copy(
+                        exportedPdfUri = uri,
+                        showExportPdfSuccessDialog = uri != null
+                    )
+                }
+            }
         }
     }
 

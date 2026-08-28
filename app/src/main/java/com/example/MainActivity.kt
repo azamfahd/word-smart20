@@ -26,6 +26,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        com.example.ui.theme.ThemeManager.init(applicationContext)
 
         val startDestination = if (intent?.data != null) "editor" else "start"
         handleIncomingIntent(intent)
@@ -48,8 +49,32 @@ class MainActivity : ComponentActivity() {
                                         popUpTo("start") { inclusive = true }
                                     }
                                 },
+                                onNewDocumentFromTemplate = { template ->
+                                    editorViewModel.createNewDocumentFromTemplate(
+                                        title = template.title,
+                                        blocks = template.generateBlocks(),
+                                        pageBorder = template.pageBorder,
+                                        pageColor = template.pageColor,
+                                        pageOrientation = template.pageOrientation,
+                                        pageSize = template.pageSize,
+                                        pageMargin = template.pageMargin,
+                                        pageStripeStyle = template.stripeStyle,
+                                        pageAccentColor = template.primaryColor,
+                                        pageSecondaryColor = template.secondaryColor
+                                    )
+                                    navController.navigate("editor") {
+                                        popUpTo("start") { inclusive = true }
+                                    }
+                                },
                                 onOpenFile = { uri ->
                                     editorViewModel.loadFromUri(uri, applicationContext)
+                                    navController.navigate("editor") {
+                                        popUpTo("start") { inclusive = true }
+                                    }
+                                },
+                                onLoadFromCloud = { cloudDoc ->
+                                    editorViewModel.processEvent(com.example.presentation.editor.RibbonEvent.OnLoadFromCloud(cloudDoc.id, cloudDoc.dataBase64))
+                                    editorViewModel.processEvent(com.example.presentation.editor.RibbonEvent.OnDocumentTitleChanged(cloudDoc.title))
                                     navController.navigate("editor") {
                                         popUpTo("start") { inclusive = true }
                                     }
@@ -59,7 +84,12 @@ class MainActivity : ComponentActivity() {
                         composable("editor") {
                             MainScreen(
                                 modifier = Modifier.fillMaxSize(),
-                                viewModel = editorViewModel
+                                viewModel = editorViewModel,
+                                onNavigateBack = {
+                                    navController.navigate("start") {
+                                        popUpTo("editor") { inclusive = true }
+                                    }
+                                }
                             )
                         }
                     }

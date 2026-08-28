@@ -1,4 +1,6 @@
-package com.example.presentation.editor
+import os
+
+content = """package com.example.presentation.editor
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -7,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -15,7 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Article
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,21 +27,17 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.presentation.auth.AuthManager
-import com.example.presentation.templates.DocumentTemplatesRepository
-import com.example.presentation.templates.TemplateCategory
-import com.example.presentation.templates.TemplateCard
-import com.example.presentation.templates.TemplateItem
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
 @Composable
 fun StartScreen(
     onNewDocument: () -> Unit,
-    onNewDocumentFromTemplate: (TemplateItem) -> Unit = {},
     onOpenFile: (Uri) -> Unit,
     onLoadFromCloud: (com.example.presentation.cloud.CloudDocument) -> Unit = {}
 ) {
@@ -143,7 +141,7 @@ fun StartScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(16.dp)
+                        .padding(20.dp)
                 ) {
                     StartScreenContent(
                         isCompact = true,
@@ -151,7 +149,6 @@ fun StartScreen(
                         isLoadingCloudDocs = isLoadingCloudDocs,
                         cloudDocs = cloudDocs,
                         onNewDocument = onNewDocument,
-                        onNewDocumentFromTemplate = onNewDocumentFromTemplate,
                         onOpenFileLauncher = { openFileLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword")) },
                         onLoadFromCloud = onLoadFromCloud
                     )
@@ -216,7 +213,7 @@ fun StartScreen(
                         .fillMaxHeight()
                         .background(Color(0xFFF3F2F1)) // Fluent Light Gray
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 40.dp, vertical = 32.dp)
+                        .padding(horizontal = 48.dp, vertical = 40.dp)
                 ) {
                     StartScreenContent(
                         isCompact = false,
@@ -224,7 +221,6 @@ fun StartScreen(
                         isLoadingCloudDocs = isLoadingCloudDocs,
                         cloudDocs = cloudDocs,
                         onNewDocument = onNewDocument,
-                        onNewDocumentFromTemplate = onNewDocumentFromTemplate,
                         onOpenFileLauncher = { openFileLauncher.launch(arrayOf("application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword")) },
                         onLoadFromCloud = onLoadFromCloud
                     )
@@ -249,7 +245,6 @@ fun StartScreenContent(
     isLoadingCloudDocs: Boolean,
     cloudDocs: List<com.example.presentation.cloud.CloudDocument>,
     onNewDocument: () -> Unit,
-    onNewDocumentFromTemplate: (TemplateItem) -> Unit,
     onOpenFileLauncher: () -> Unit,
     onLoadFromCloud: (com.example.presentation.cloud.CloudDocument) -> Unit
 ) {
@@ -260,160 +255,46 @@ fun StartScreenContent(
         else -> "مرحباً"
     }
 
-    var selectedCategory by remember { mutableStateOf(TemplateCategory.ALL) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    val filteredTemplates = remember(selectedCategory, searchQuery) {
-        DocumentTemplatesRepository.templates.filter { template ->
-            val matchesCategory = if (selectedCategory == TemplateCategory.ALL) {
-                true
-            } else {
-                template.category == selectedCategory
-            }
-            val matchesSearch = if (searchQuery.isBlank()) {
-                true
-            } else {
-                template.title.contains(searchQuery, ignoreCase = true) ||
-                template.description.contains(searchQuery, ignoreCase = true) ||
-                template.category.title.contains(searchQuery, ignoreCase = true)
-            }
-            matchesCategory && matchesSearch
-        }
-    }
-
-    // Greeting & Header
     Text(
         text = greeting,
-        fontSize = if (isCompact) 22.sp else 30.sp,
+        fontSize = if (isCompact) 24.sp else 32.sp,
         fontWeight = FontWeight.Light,
         color = Color(0xFF202124),
-        modifier = Modifier.padding(bottom = 12.dp)
+        modifier = Modifier.padding(bottom = if (isCompact) 20.dp else 32.dp)
+    )
+    
+    Text(
+        text = "جديد",
+        fontSize = if (isCompact) 18.sp else 20.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color(0xFF202124),
+        modifier = Modifier.padding(bottom = 16.dp)
     )
 
-    // Section Title & Search
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "قوالب المستندات والتصاميم الجاهزة",
-            fontSize = if (isCompact) 17.sp else 20.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF1E293B)
-        )
-    }
-
-    // Category Filter Chips
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 16.dp)
-    ) {
-        items(TemplateCategory.values()) { category ->
-            val isSelected = selectedCategory == category
-            FilterChip(
-                selected = isSelected,
-                onClick = { selectedCategory = category },
-                label = {
-                    Text(
-                        text = category.title,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = Color.White,
-                    containerColor = Color.White,
-                    labelColor = Color(0xFF334155)
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFCBD5E1),
-                    enabled = true,
-                    selected = isSelected
-                ),
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
-    }
-
-    // Templates Horizontal Carousel with Visual Mock Paper Renderers
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = if (isCompact) 28.dp else 36.dp)
+        modifier = Modifier.fillMaxWidth().padding(bottom = if (isCompact) 32.dp else 48.dp)
     ) {
-        // Option to open existing file directly
         item {
-            Column(
-                modifier = Modifier
-                    .width(if (isCompact) 130.dp else 165.dp)
-                    .clickable { onOpenFileLauncher() }
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (isCompact) 180.dp else 225.dp)
-                        .shadow(elevation = 2.dp, shape = RoundedCornerShape(6.dp))
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.White)
-                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(6.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "فتح من الجهاز",
-                            tint = Color(0xFFF59E0B), // Warm Yellow
-                            modifier = Modifier.size(44.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "فتح ملف",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1E293B)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "فتح من الجهاز",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B),
-                    fontSize = if (isCompact) 13.sp else 14.sp
-                )
-                Text(
-                    text = "استيراد docx",
-                    color = Color(0xFF64748B),
-                    fontSize = if (isCompact) 11.sp else 12.sp
-                )
-            }
-        }
-
-        // Render filtered templates
-        items(filteredTemplates, key = { it.id }) { template ->
-            TemplateCard(
-                template = template,
+            DocumentTemplateCard(
+                title = "مستند فارغ",
                 isCompact = isCompact,
-                onClick = {
-                    if (template.previewType == com.example.presentation.templates.TemplatePreviewType.BLANK) {
-                        onNewDocument()
-                    } else {
-                        onNewDocumentFromTemplate(template)
-                    }
-                }
+                onClick = onNewDocument
+            )
+        }
+        item {
+            DocumentTemplateCard(
+                title = "فتح من الجهاز",
+                isCompact = isCompact,
+                isFolder = true,
+                onClick = onOpenFileLauncher
             )
         }
     }
     
-    // Recent Cloud Documents Section
     Text(
-        text = "المستندات الأخيرة",
-        fontSize = if (isCompact) 17.sp else 20.sp,
+        text = "الأخيرة",
+        fontSize = if (isCompact) 18.sp else 20.sp,
         fontWeight = FontWeight.SemiBold,
         color = Color(0xFF202124),
         modifier = Modifier.padding(bottom = 16.dp)
@@ -426,25 +307,11 @@ fun StartScreenContent(
             shape = RoundedCornerShape(8.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CloudQueue,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    "يرجى تسجيل الدخول لعرض ومزامنة مستنداتك السحابية والوصول إليها من أي مكان.", 
-                    color = Color(0xFF605E5C),
-                    fontSize = 14.sp
-                )
-            }
+            Text(
+                "يرجى تسجيل الدخول لعرض ومزامنة مستنداتك السحابية.", 
+                color = Color(0xFF605E5C),
+                modifier = Modifier.padding(20.dp)
+            )
         }
     } else if (isLoadingCloudDocs) {
         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
@@ -458,14 +325,13 @@ fun StartScreenContent(
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Text(
-                "لا توجد مستندات محفوظة في السحابة حتى الآن. سيتم حفظ أي مستند تنشئه تلقائياً عند طلب الحفظ السحابي.", 
+                "لا توجد مستندات محفوظة في السحابة حتى الآن.", 
                 color = Color(0xFF605E5C),
-                modifier = Modifier.padding(20.dp),
-                fontSize = 14.sp
+                modifier = Modifier.padding(20.dp)
             )
         }
     } else {
-        // List View for Recent Documents
+        // List View for Recent Documents (Like MS Word)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -509,6 +375,57 @@ fun SidebarItem(text: String, icon: androidx.compose.ui.graphics.vector.ImageVec
             color = Color.White,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
             fontSize = 15.sp
+        )
+    }
+}
+
+@Composable
+fun DocumentTemplateCard(
+    title: String,
+    isCompact: Boolean,
+    isFolder: Boolean = false,
+    onClick: () -> Unit
+) {
+    val cardWidth = if (isCompact) 130.dp else 160.dp
+    val cardHeight = if (isCompact) 180.dp else 220.dp
+    
+    Column(
+        modifier = Modifier
+            .width(cardWidth)
+            .clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(cardHeight)
+                .shadow(2.dp, RoundedCornerShape(4.dp))
+                .background(Color.White)
+                .clip(RoundedCornerShape(4.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            if (isFolder) {
+                 Icon(
+                    imageVector = Icons.Default.FolderOpen,
+                    contentDescription = title,
+                    tint = Color(0xFFF3C31A), // Folder Yellow
+                    modifier = Modifier.size(48.dp)
+                )
+            } else {
+                // Blank Page Icon representation
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = title,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+        }
+        Text(
+            text = title,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF202124),
+            fontSize = 14.sp,
+            modifier = Modifier.padding(top = 12.dp)
         )
     }
 }
@@ -687,3 +604,8 @@ fun SettingsDialog(onDismiss: () -> Unit) {
         }
     )
 }
+"""
+
+with open("app/src/main/java/com/example/presentation/editor/StartScreen.kt", "w") as f:
+    f.write(content)
+
