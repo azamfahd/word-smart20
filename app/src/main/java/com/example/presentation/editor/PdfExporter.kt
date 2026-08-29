@@ -132,9 +132,9 @@ class PdfExporter {
                             color = state.textColor.toArgb()
                             textSize = state.fontSize.toFloat().coerceIn(10f, 24f)
                             typeface = Typeface.create(
-                                when (state.fontFamily) {
-                                    "Times New Roman" -> Typeface.SERIF
-                                    "Courier New" -> Typeface.MONOSPACE
+                                when (state.fontFamily.lowercase()) {
+                                    "times new roman", "georgia", "garamond", "cambria", "book antiqua", "palatino linotype", "aptos serif" -> Typeface.SERIF
+                                    "courier new", "consolas", "lucida console" -> Typeface.MONOSPACE
                                     else -> Typeface.SANS_SERIF
                                 },
                                 if (state.isBold && state.isItalic) Typeface.BOLD_ITALIC

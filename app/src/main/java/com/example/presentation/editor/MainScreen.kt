@@ -715,7 +715,7 @@ fun GroupDetailsDialog(
                                 color = Color(0xFF1E293B)
                             )
 
-                            // Font Family Selector Grid
+                            // Font Family Selector Scrollable List Box
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -724,55 +724,79 @@ fun GroupDetailsDialog(
                                     .padding(8.dp)
                             ) {
                                 Text(
-                                    text = if (state.isRtl) "خط اللاتيني والعربي (Font Face):" else "Font Family:",
+                                    text = if (state.isRtl) "الخط (Font):" else "Font:",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color(0xFF475569)
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
-                                val fontFamilies = listOf("Calibri", "Arial", "Times New Roman", "Cairo", "Amiri", "Courier New")
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                
+                                val fontFamilies = listOf(
+                                    "Aptos", "Aptos Display", "Aptos Serif",
+                                    "Arial", "Arial Black", "Arial Narrow", 
+                                    "Calibri", "Calibri Light", "Cambria", "Candara", "Century Gothic",
+                                    "Comic Sans MS", "Consolas", "Constantia", "Corbel", "Courier New",
+                                    "Franklin Gothic Medium", "Garamond", "Georgia", "Impact", 
+                                    "Lucida Console", "Lucida Sans Unicode", "Palatino Linotype",
+                                    "Segoe UI", "Segoe UI Light", "Segoe UI Semibold", 
+                                    "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana",
+                                    "Aldhabi", "Amiri", "Andalus", "Arabic Typesetting", "Cairo", 
+                                    "Dubai", "Kufi", "Naskh", "Sakkal Majalla", "Simplified Arabic", "Traditional Arabic"
+                                )
+                                
+                                val fontDescriptions = mapOf(
+                                    "Aptos" to "لاتيني حديث", "Aptos Display" to "حديث عريض", "Aptos Serif" to "حديث مزخرف",
+                                    "Arial" to "أساسي", "Arial Black" to "أساسي عريض", "Arial Narrow" to "أساسي نحيف",
+                                    "Calibri" to "افتراضي (أوفيس)", "Calibri Light" to "افتراضي رفيع",
+                                    "Cambria" to "رسمي", "Candara" to "أنيق", "Century Gothic" to "هندسي",
+                                    "Comic Sans MS" to "عفوي", "Consolas" to "برمجي", "Constantia" to "رسمي", "Corbel" to "حديث",
+                                    "Courier New" to "آلة كاتبة", "Franklin Gothic Medium" to "عريض", "Garamond" to "كلاسيكي قديم",
+                                    "Georgia" to "كلاسيكي", "Impact" to "ملصقات", "Lucida Console" to "برمجي",
+                                    "Lucida Sans Unicode" to "رموز دولية", "Palatino Linotype" to "كتابي",
+                                    "Segoe UI" to "واجهات", "Segoe UI Light" to "واجهات رفيع", "Segoe UI Semibold" to "واجهات عريض",
+                                    "Tahoma" to "شائع", "Times New Roman" to "رسمي كلاسيكي",
+                                    "Trebuchet MS" to "حديث", "Verdana" to "واضح للشاشات",
+                                    "Aldhabi" to "عربي ديواني", "Amiri" to "عربي نسخ", "Andalus" to "عربي أندلسي",
+                                    "Arabic Typesetting" to "عربي طباعي", "Cairo" to "عربي حديث",
+                                    "Dubai" to "عربي معاصر", "Kufi" to "عربي كوفي", "Naskh" to "عربي نسخ قياسي",
+                                    "Sakkal Majalla" to "عربي مجلات", "Simplified Arabic" to "عربي مبسط", "Traditional Arabic" to "عربي تقليدي"
+                                )
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(130.dp)
+                                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(2.dp))
+                                        .background(Color.White)
                                 ) {
-                                    fontFamilies.take(3).forEach { font ->
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .border(
-                                                    width = if (state.fontFamily == font) 1.5.dp else 1.dp,
-                                                    color = if (state.fontFamily == font) Color(0xFF185ABD) else Color(0xFFE2E8F0),
-                                                    shape = RoundedCornerShape(4.dp)
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        fontFamilies.forEach { font ->
+                                            val isSelected = state.fontFamily == font
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(if (isSelected) Color(0xFF0078D4) else Color.Transparent)
+                                                    .clickable { onEvent(RibbonEvent.OnFontFamilyChanged(font)) }
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = font, 
+                                                    fontSize = 14.sp,
+                                                    fontFamily = com.example.presentation.editor.components.getPreviewFontFamily(font),
+                                                    color = if (isSelected) Color.White else Color(0xFF1E293B)
                                                 )
-                                                .background(if (state.fontFamily == font) Color(0xFFEFF6FF) else Color.Transparent)
-                                                .clickable { onEvent(RibbonEvent.OnFontFamilyChanged(font)) }
-                                                .padding(vertical = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(font, fontSize = 11.sp, fontWeight = if (state.fontFamily == font) FontWeight.Bold else FontWeight.Normal)
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    fontFamilies.takeLast(3).forEach { font ->
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .border(
-                                                    width = if (state.fontFamily == font) 1.5.dp else 1.dp,
-                                                    color = if (state.fontFamily == font) Color(0xFF185ABD) else Color(0xFFE2E8F0),
-                                                    shape = RoundedCornerShape(4.dp)
+                                                Spacer(modifier = Modifier.weight(1f))
+                                                Text(
+                                                    text = fontDescriptions[font] ?: "",
+                                                    fontSize = 10.sp,
+                                                    color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF94A3B8)
                                                 )
-                                                .background(if (state.fontFamily == font) Color(0xFFEFF6FF) else Color.Transparent)
-                                                .clickable { onEvent(RibbonEvent.OnFontFamilyChanged(font)) }
-                                                .padding(vertical = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(font, fontSize = 11.sp, fontWeight = if (state.fontFamily == font) FontWeight.Bold else FontWeight.Normal)
+                                            }
                                         }
                                     }
                                 }

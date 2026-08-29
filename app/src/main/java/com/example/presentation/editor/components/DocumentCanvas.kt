@@ -62,9 +62,10 @@ fun createSafeTextStyle(
     textAlign: TextAlign = TextAlign.Unspecified,
     isRtl: Boolean = true
 ): TextStyle {
-    val family = when (fontFamilyStr) {
-        "Times New Roman" -> FontFamily.Serif
-        "Courier New" -> FontFamily.Monospace
+    val family = when (fontFamilyStr.lowercase()) {
+        "times new roman", "georgia", "garamond", "cambria", "book antiqua", "palatino linotype", "aptos serif" -> FontFamily.Serif
+        "courier new", "consolas", "lucida console" -> FontFamily.Monospace
+        "comic sans ms" -> FontFamily.Cursive
         else -> FontFamily.SansSerif
     }
     val safeLineSpacing = lineSpacingFactor.coerceAtLeast(1.0f)

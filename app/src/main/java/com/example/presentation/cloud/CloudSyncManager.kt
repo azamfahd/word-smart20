@@ -14,9 +14,22 @@ data class CloudDocument(
 )
 
 class CloudSyncManager {
-    private val firestore = FirebaseFirestore.getInstance()
+    private val firestore: FirebaseFirestore? by lazy {
+        try {
+            FirebaseFirestore.getInstance()
+        } catch (e: Exception) {
+            Log.e("CloudSyncManager", "Firebase is not initialized. Cloud sync will be disabled.", e)
+            null
+        }
+    }
 
     suspend fun saveDocument(userId: String, docId: String, title: String, docxBytes: ByteArray) {
+        val fs = firestore
+        if (fs == null) {
+            Log.w("CloudSyncManager", "Cannot save document: Firebase is not initialized")
+            return
+        }
+
         val base64Data = Base64.encodeToString(docxBytes, Base64.DEFAULT)
         val cloudDoc = CloudDocument(
             id = docId,
@@ -26,7 +39,7 @@ class CloudSyncManager {
         )
         
         try {
-            firestore.collection("users").document(userId).collection("documents").document(docId)
+            fs.collection("users").document(userId).collection("documents").document(docId)
                 .set(cloudDoc).await()
             Log.d("CloudSync", "Document saved to cloud successfully")
         } catch (e: Exception) {
@@ -36,8 +49,14 @@ class CloudSyncManager {
     }
 
     suspend fun getDocuments(userId: String): List<CloudDocument> {
+        val fs = firestore
+        if (fs == null) {
+            Log.w("CloudSyncManager", "Cannot get documents: Firebase is not initialized")
+            return emptyList()
+        }
+
         return try {
-            val snapshot = firestore.collection("users").document(userId).collection("documents")
+            val snapshot = fs.collection("users").document(userId).collection("documents")
                 .get().await()
             snapshot.documents.mapNotNull { it.toObject(CloudDocument::class.java) }
         } catch (e: Exception) {
@@ -47,8 +66,14 @@ class CloudSyncManager {
     }
 
     suspend fun deleteDocument(userId: String, docId: String) {
+        val fs = firestore
+        if (fs == null) {
+            Log.w("CloudSyncManager", "Cannot delete document: Firebase is not initialized")
+            return
+        }
+
         try {
-            firestore.collection("users").document(userId).collection("documents").document(docId)
+            fs.collection("users").document(userId).collection("documents").document(docId)
                 .delete().await()
         } catch (e: Exception) {
             Log.e("CloudSync", "Failed to delete document from cloud", e)

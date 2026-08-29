@@ -18,11 +18,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.presentation.editor.*
+
+fun getPreviewFontFamily(fontName: String): FontFamily {
+    return when (fontName.lowercase()) {
+        "times new roman", "georgia", "garamond", "cambria", "book antiqua", "palatino linotype", "aptos serif",
+        "aldhabi", "andalus", "arabic typesetting", "traditional arabic", "sakkal majalla" -> FontFamily.Serif
+        "courier new", "consolas", "lucida console" -> FontFamily.Monospace
+        "comic sans ms", "amiri" -> FontFamily.Cursive
+        else -> FontFamily.SansSerif
+    }
+}
 
 fun localize(englishText: String, isRtl: Boolean): String {
     if (!isRtl) return englishText
@@ -343,9 +354,35 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showStylesMenu by remember { mutableStateOf(false) }
 
     val fontFamilies = listOf(
-        "Calibri", "Arial", "Times New Roman", "Tahoma", "Segoe UI",
-        "Cairo", "Amiri", "Roboto", "Courier New", "Georgia"
+        "Aptos", "Aptos Display", "Aptos Serif",
+        "Arial", "Arial Black", "Arial Narrow", 
+        "Calibri", "Calibri Light", "Cambria", "Candara", "Century Gothic",
+        "Comic Sans MS", "Consolas", "Constantia", "Corbel", "Courier New",
+        "Franklin Gothic Medium", "Garamond", "Georgia", "Impact", 
+        "Lucida Console", "Lucida Sans Unicode", "Palatino Linotype",
+        "Segoe UI", "Segoe UI Light", "Segoe UI Semibold", 
+        "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana",
+        "Aldhabi", "Amiri", "Andalus", "Arabic Typesetting", "Cairo", 
+        "Dubai", "Kufi", "Naskh", "Sakkal Majalla", "Simplified Arabic", "Traditional Arabic"
     )
+    val fontDescriptions = mapOf(
+        "Aptos" to "لاتيني حديث", "Aptos Display" to "حديث عريض", "Aptos Serif" to "حديث مزخرف",
+        "Arial" to "أساسي", "Arial Black" to "أساسي عريض", "Arial Narrow" to "أساسي نحيف",
+        "Calibri" to "افتراضي (أوفيس)", "Calibri Light" to "افتراضي رفيع",
+        "Cambria" to "رسمي", "Candara" to "أنيق", "Century Gothic" to "هندسي",
+        "Comic Sans MS" to "عفوي", "Consolas" to "برمجي", "Constantia" to "رسمي", "Corbel" to "حديث",
+        "Courier New" to "آلة كاتبة", "Franklin Gothic Medium" to "عريض", "Garamond" to "كلاسيكي قديم",
+        "Georgia" to "كلاسيكي", "Impact" to "ملصقات", "Lucida Console" to "برمجي",
+        "Lucida Sans Unicode" to "رموز دولية", "Palatino Linotype" to "كتابي",
+        "Segoe UI" to "واجهات", "Segoe UI Light" to "واجهات رفيع", "Segoe UI Semibold" to "واجهات عريض",
+        "Tahoma" to "شائع", "Times New Roman" to "رسمي كلاسيكي",
+        "Trebuchet MS" to "حديث", "Verdana" to "واضح للشاشات",
+        "Aldhabi" to "عربي ديواني", "Amiri" to "عربي نسخ", "Andalus" to "عربي أندلسي",
+        "Arabic Typesetting" to "عربي طباعي", "Cairo" to "عربي حديث",
+        "Dubai" to "عربي معاصر", "Kufi" to "عربي كوفي", "Naskh" to "عربي نسخ قياسي",
+        "Sakkal Majalla" to "عربي مجلات", "Simplified Arabic" to "عربي مبسط", "Traditional Arabic" to "عربي تقليدي"
+    )
+
     val fontSizes = listOf(8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72)
     val lineSpacings = listOf(1.0f, 1.15f, 1.5f, 2.0f, 2.5f, 3.0f)
     
@@ -401,7 +438,24 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                         DropdownMenu(expanded = showFontMenu, onDismissRequest = { showFontMenu = false }) {
                             fontFamilies.forEach { font ->
                                 DropdownMenuItem(
-                                    text = { Text(font) },
+                                    text = { 
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = font,
+                                                fontFamily = getPreviewFontFamily(font)
+                                            )
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            Text(
+                                                text = fontDescriptions[font] ?: "", 
+                                                fontSize = 10.sp, 
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    },
                                     onClick = {
                                         onEvent(RibbonEvent.OnFontFamilyChanged(font))
                                         showFontMenu = false
