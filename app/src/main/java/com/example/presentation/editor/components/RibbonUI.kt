@@ -26,13 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.example.presentation.editor.*
 
 fun getPreviewFontFamily(fontName: String): FontFamily {
-    return when (fontName.lowercase()) {
-        "times new roman", "georgia", "garamond", "cambria", "book antiqua", "palatino linotype", "aptos serif",
-        "aldhabi", "andalus", "arabic typesetting", "traditional arabic", "sakkal majalla" -> FontFamily.Serif
-        "courier new", "consolas", "lucida console" -> FontFamily.Monospace
-        "comic sans ms", "amiri" -> FontFamily.Cursive
-        else -> FontFamily.SansSerif
-    }
+    return AppFonts.getFontFamily(fontName)
 }
 
 fun localize(englishText: String, isRtl: Boolean): String {
@@ -352,6 +346,8 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showHighlightMenu by remember { mutableStateOf(false) }
     var showCaseMenu by remember { mutableStateOf(false) }
     var showStylesMenu by remember { mutableStateOf(false) }
+    var showTextColorStudio by remember { mutableStateOf(false) }
+    var showHighlightColorStudio by remember { mutableStateOf(false) }
 
     val fontFamilies = listOf(
         "Aptos", "Aptos Display", "Aptos Serif",
@@ -410,8 +406,8 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
         // 1. Undo / Redo Group
         RibbonGroup(localize("Undo", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Undo")) }) {
             Column {
-                RibbonSmallButton(Icons.AutoMirrored.Filled.Undo, localize("Undo", state.isRtl)) { onEvent(RibbonEvent.OnUndoClicked) }
-                RibbonSmallButton(Icons.AutoMirrored.Filled.Redo, localize("Redo", state.isRtl)) { onEvent(RibbonEvent.OnRedoClicked) }
+                RibbonSmallButton(Icons.AutoMirrored.Filled.Undo, localize("Undo", state.isRtl), enabled = state.canUndo) { onEvent(RibbonEvent.OnUndoClicked) }
+                RibbonSmallButton(Icons.AutoMirrored.Filled.Redo, localize("Redo", state.isRtl), enabled = state.canRedo) { onEvent(RibbonEvent.OnRedoClicked) }
             }
         }
 
@@ -435,33 +431,15 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box {
                         DropdownSelector(text = state.fontFamily, width = 110.dp) { showFontMenu = true }
-                        DropdownMenu(expanded = showFontMenu, onDismissRequest = { showFontMenu = false }) {
-                            fontFamilies.forEach { font ->
-                                DropdownMenuItem(
-                                    text = { 
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = font,
-                                                fontFamily = getPreviewFontFamily(font)
-                                            )
-                                            Spacer(modifier = Modifier.width(16.dp))
-                                            Text(
-                                                text = fontDescriptions[font] ?: "", 
-                                                fontSize = 10.sp, 
-                                                color = Color.Gray
-                                            )
-                                        }
-                                    },
-                                    onClick = {
-                                        onEvent(RibbonEvent.OnFontFamilyChanged(font))
-                                        showFontMenu = false
-                                    }
-                                )
-                            }
+                        if (showFontMenu) {
+                            WordFontDropdownMenu(
+                                currentFont = state.fontFamily,
+                                isRtl = state.isRtl,
+                                onFontSelected = { font ->
+                                    onEvent(RibbonEvent.OnFontFamilyChanged(font))
+                                },
+                                onDismiss = { showFontMenu = false }
+                            )
                         }
                     }
 
@@ -526,6 +504,20 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                                     }
                                 )
                             }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.ColorLens, contentDescription = null, tint = Color(0xFF185ABD), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(if (state.isRtl) "ألوان إضافية وتخصيص كامل..." else "More Colors...", fontWeight = FontWeight.Bold, color = Color(0xFF185ABD))
+                                    }
+                                },
+                                onClick = {
+                                    showTextColorStudio = true
+                                    showTextColorMenu = false
+                                }
+                            )
                         }
                     }
 
@@ -548,10 +540,46 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                                     }
                                 )
                             }
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.ColorLens, contentDescription = null, tint = Color(0xFF185ABD), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(if (state.isRtl) "ألوان إضافية وتخصيص كامل..." else "More Colors...", fontWeight = FontWeight.Bold, color = Color(0xFF185ABD))
+                                    }
+                                },
+                                onClick = {
+                                    showHighlightColorStudio = true
+                                    showHighlightMenu = false
+                                }
+                            )
                         }
                     }
                 }
             }
+        }
+
+        if (showTextColorStudio) {
+            ColorStudioDialog(
+                initialColor = state.textColor,
+                title = if (state.isRtl) "استوديو لون الخط (RGB / HEX / وورد)" else "Text Color Studio",
+                isRtl = state.isRtl,
+                allowTransparent = false,
+                onColorSelected = { color -> onEvent(RibbonEvent.OnTextColorChanged(color)) },
+                onDismiss = { showTextColorStudio = false }
+            )
+        }
+
+        if (showHighlightColorStudio) {
+            ColorStudioDialog(
+                initialColor = state.highlightColor,
+                title = if (state.isRtl) "استوديو لون تمييز النص (RGB / HEX)" else "Highlight Color Studio",
+                isRtl = state.isRtl,
+                allowTransparent = true,
+                onColorSelected = { color -> onEvent(RibbonEvent.OnHighlightColorChanged(color)) },
+                onDismiss = { showHighlightColorStudio = false }
+            )
         }
 
         VerticalDivider()
@@ -651,7 +679,7 @@ fun InsertTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
         }
         VerticalDivider()
         RibbonGroup(localize("Illustrations", state.isRtl), onLaunchDetails = { onEvent(RibbonEvent.OnShowGroupDetails("Illustrations")) }) {
-            RibbonLargeButton(Icons.Default.Image, localize("Picture", state.isRtl)) { onEvent(RibbonEvent.OnInsertImageWithUri("embedded_image.png")) }
+            RibbonLargeButton(Icons.Default.Image, localize("Picture", state.isRtl)) { onEvent(RibbonEvent.OnPickImageRequested) }
             Box {
                 RibbonLargeButton(Icons.Default.Category, localize("Shapes", state.isRtl)) { showShapeMenu = true }
                 DropdownMenu(expanded = showShapeMenu, onDismissRequest = { showShapeMenu = false }) {
@@ -716,6 +744,7 @@ fun DesignTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showPageColorMenu by remember { mutableStateOf(false) }
     var showThemeMenu by remember { mutableStateOf(false) }
     var showBordersDialog by remember { mutableStateOf(false) }
+    var showPageColorStudio by remember { mutableStateOf(false) }
 
     Row(
         verticalAlignment = Alignment.CenterVertically
@@ -756,12 +785,37 @@ fun DesignTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                     DropdownMenuItem(text = { Text(localize("Cream Warm", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFFFFDD0))); showPageColorMenu = false })
                     DropdownMenuItem(text = { Text(localize("Light Slate", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFF3F4F6))); showPageColorMenu = false })
                     DropdownMenuItem(text = { Text(localize("Soft Blue", state.isRtl)) }, onClick = { onEvent(RibbonEvent.OnPageColorChanged(Color(0xFFEFF6FF))); showPageColorMenu = false })
+                    HorizontalDivider()
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ColorLens, contentDescription = null, tint = Color(0xFF185ABD), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (state.isRtl) "ألوان إضافية وتخصيص كامل..." else "More Colors...", fontWeight = FontWeight.Bold, color = Color(0xFF185ABD))
+                            }
+                        },
+                        onClick = {
+                            showPageColorStudio = true
+                            showPageColorMenu = false
+                        }
+                    )
                 }
             }
 
             // Page Borders
             RibbonLargeButton(Icons.Default.BorderStyle, localize("Page Borders", state.isRtl)) { showBordersDialog = true }
         }
+    }
+
+    if (showPageColorStudio) {
+        ColorStudioDialog(
+            initialColor = state.pageColor,
+            title = if (state.isRtl) "استوديو لون خلفية الصفحة (RGB / HEX / أوفيس)" else "Page Color Studio",
+            isRtl = state.isRtl,
+            allowTransparent = false,
+            onColorSelected = { color -> onEvent(RibbonEvent.OnPageColorChanged(color)) },
+            onDismiss = { showPageColorStudio = false }
+        )
     }
 
     if (showBordersDialog) {
@@ -817,6 +871,7 @@ fun BordersAndShadingDialog(
     var style by remember { mutableStateOf(state.pageBorder.style) }
     var color by remember { mutableStateOf(state.pageBorder.color) }
     var widthPt by remember { mutableFloatStateOf(state.pageBorder.widthPt) }
+    var showBorderColorStudio by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -856,12 +911,29 @@ fun BordersAndShadingDialog(
                 Divider()
 
                 // Color
-                Text(localize("Color", state.isRtl), fontWeight = FontWeight.Medium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(localize("Color", state.isRtl), fontWeight = FontWeight.Medium)
+                    OutlinedButton(
+                        onClick = { showBorderColorStudio = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (state.isRtl) "مخصص..." else "Custom...", fontSize = 11.sp)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     ColorOption(Color.Black, color == Color.Black) { color = Color.Black }
                     ColorOption(Color.Red, color == Color.Red) { color = Color.Red }
                     ColorOption(Color.Blue, color == Color.Blue) { color = Color.Blue }
                     ColorOption(Color(0xFF16A34A), color == Color(0xFF16A34A)) { color = Color(0xFF16A34A) } // Green
+                    if (color !in listOf(Color.Black, Color.Red, Color.Blue, Color(0xFF16A34A))) {
+                        ColorOption(color, true) {}
+                    }
                 }
             }
         },
@@ -876,6 +948,17 @@ fun BordersAndShadingDialog(
             }
         }
     )
+
+    if (showBorderColorStudio) {
+        ColorStudioDialog(
+            initialColor = color,
+            title = if (state.isRtl) "استوديو لون إطار الصفحة" else "Border Color Studio",
+            isRtl = state.isRtl,
+            allowTransparent = false,
+            onColorSelected = { selected -> color = selected },
+            onDismiss = { showBorderColorStudio = false }
+        )
+    }
 }
 
 @Composable
@@ -1092,36 +1175,36 @@ fun DropdownSelector(text: String, width: Dp, onClick: () -> Unit) {
 }
 
 @Composable
-fun RibbonLargeButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun RibbonLargeButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Column(
         modifier = Modifier
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(26.dp), tint = Color(0xFF1E293B))
+        Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(26.dp), tint = if (enabled) Color(0xFF1E293B) else Color(0xFF94A3B8))
         Spacer(modifier = Modifier.height(2.dp))
-        Text(text = label, fontSize = 11.sp, color = Color(0xFF1E293B))
+        Text(text = label, fontSize = 11.sp, color = if (enabled) Color(0xFF1E293B) else Color(0xFF94A3B8))
     }
 }
 
 @Composable
-fun RibbonButton(icon: ImageVector, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(28.dp)) {
-        Icon(imageVector = icon, contentDescription = null, tint = Color(0xFF1E293B), modifier = Modifier.size(18.dp))
+fun RibbonButton(icon: ImageVector, enabled: Boolean = true, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(28.dp)) {
+        Icon(imageVector = icon, contentDescription = null, tint = if (enabled) Color(0xFF1E293B) else Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
     }
 }
 
 @Composable
-fun RibbonColorButton(icon: ImageVector, color: Color, onClick: () -> Unit) {
+fun RibbonColorButton(icon: ImageVector, color: Color, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(28.dp)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(imageVector = icon, contentDescription = null, tint = Color(0xFF1E293B), modifier = Modifier.size(18.dp))
+            Icon(imageVector = icon, contentDescription = null, tint = if (enabled) Color(0xFF1E293B) else Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
             Box(
                 modifier = Modifier
                     .width(16.dp)
@@ -1133,15 +1216,15 @@ fun RibbonColorButton(icon: ImageVector, color: Color, onClick: () -> Unit) {
 }
 
 @Composable
-fun RibbonToggleButton(icon: ImageVector, isChecked: Boolean, onClick: () -> Unit) {
+fun RibbonToggleButton(icon: ImageVector, isChecked: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val bg = if (isChecked) Color(0xFFBFDBFE) else Color.Transparent
-    val tint = if (isChecked) Color(0xFF1D4ED8) else Color(0xFF1E293B)
+    val tint = if (!enabled) Color(0xFF94A3B8) else if (isChecked) Color(0xFF1D4ED8) else Color(0xFF1E293B)
 
     Box(
         modifier = Modifier
             .size(28.dp)
             .background(bg, RoundedCornerShape(3.dp))
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
@@ -1149,16 +1232,16 @@ fun RibbonToggleButton(icon: ImageVector, isChecked: Boolean, onClick: () -> Uni
 }
 
 @Composable
-fun RibbonSmallButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+fun RibbonSmallButton(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(16.dp), tint = Color(0xFF1E293B))
+        Icon(imageVector = icon, contentDescription = label, modifier = Modifier.size(16.dp), tint = if (enabled) Color(0xFF1E293B) else Color(0xFF94A3B8))
         Spacer(modifier = Modifier.width(6.dp))
-        Text(text = label, fontSize = 11.sp, color = Color(0xFF1E293B))
+        Text(text = label, fontSize = 11.sp, color = if (enabled) Color(0xFF1E293B) else Color(0xFF94A3B8))
     }
 }
 

@@ -1,14 +1,30 @@
 package com.example.presentation.editor
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color as AndroidColor
 import android.graphics.Paint
-import android.graphics.pdf.PdfDocument
+import android.graphics.Rect
 import android.graphics.RectF
+import android.graphics.pdf.PdfDocument
 import android.graphics.Typeface
 import android.net.Uri
+import android.text.Layout
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.StaticLayout
+import android.text.TextPaint
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.ForegroundColorSpan
+import android.text.style.StrikethroughSpan
+import android.text.style.StyleSpan
+import android.text.style.UnderlineSpan
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
@@ -18,26 +34,40 @@ class PdfExporter {
     fun exportToPdf(context: Context, state: EditorState): Uri? {
         val pdfDocument = PdfDocument()
 
-        // Standard A4 dimensions in PDF points (72 points per inch)
-        val pageWidth = 595
-        val pageHeight = 842
+        // Dimensions in PDF points (72 points per inch)
+        val (baseWidth, baseHeight) = when (state.pageSize) {
+            PageSize.A3 -> 842 to 1190
+            PageSize.A4 -> 595 to 842
+            PageSize.A5 -> 420 to 595
+            PageSize.LETTER -> 612 to 792
+            PageSize.LEGAL -> 612 to 1008
+        }
 
-        // Create Page 1
+        val pageWidth = if (state.pageOrientation == PageOrientation.LANDSCAPE) baseHeight else baseWidth
+        val pageHeight = if (state.pageOrientation == PageOrientation.LANDSCAPE) baseWidth else baseHeight
+
+        val marginX = when (state.pageMargin) {
+            PageMargin.NORMAL -> 72f
+            PageMargin.NARROW -> 36f
+            PageMargin.MODERATE -> 54f
+            PageMargin.WIDE -> 108f
+        }
+        val marginY = when (state.pageMargin) {
+            PageMargin.NORMAL -> 72f
+            PageMargin.NARROW -> 36f
+            PageMargin.MODERATE -> 72f
+            PageMargin.WIDE -> 72f
+        }
+
         var pageNumber = 1
         var pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
         var page = pdfDocument.startPage(pageInfo)
         var canvas = page.canvas
 
-        val paint = Paint().apply {
-            isAntiAlias = true
-        }
-
-        var currentY = 60f
-        val marginX = 40f
+        var currentY = marginY
         val contentWidth = pageWidth - (marginX * 2)
 
         fun drawHeaderAndFooter(canvas: Canvas, currentPageNum: Int) {
-            // Draw Background Color
             if (state.pageColor.toArgb() != androidx.compose.ui.graphics.Color.White.toArgb()) {
                 val bgPaint = Paint().apply {
                     color = state.pageColor.toArgb()
@@ -46,7 +76,6 @@ class PdfExporter {
                 canvas.drawRect(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat(), bgPaint)
             }
 
-            // Draw Watermark
             if (state.watermarkText.isNotEmpty()) {
                 val wmPaint = Paint().apply {
                     color = AndroidColor.argb(30, 150, 150, 150)
@@ -60,7 +89,6 @@ class PdfExporter {
                 canvas.restore()
             }
 
-            // Draw Header
             if (state.headerText.text.isNotEmpty()) {
                 val headerPaint = Paint().apply {
                     color = AndroidColor.DKGRAY
@@ -69,10 +97,9 @@ class PdfExporter {
                     textAlign = if (state.isRtl) Paint.Align.RIGHT else Paint.Align.LEFT
                 }
                 val headerX = if (state.isRtl) pageWidth - marginX else marginX
-                canvas.drawText(state.headerText.text, headerX, 30f, headerPaint)
+                canvas.drawText(state.headerText.text, headerX, marginY / 2f, headerPaint)
             }
 
-            // Draw Footer & Page Number
             val footerX = if (state.isRtl) marginX else pageWidth - marginX
             val footerPaint = Paint().apply {
                 color = AndroidColor.GRAY
@@ -84,33 +111,30 @@ class PdfExporter {
             } else {
                 "$currentPageNum"
             }
-            canvas.drawText(footerStr, footerX, pageHeight - 25f, footerPaint)
+            canvas.drawText(footerStr, footerX, pageHeight - (marginY / 2f), footerPaint)
 
-            // Draw Top/Bottom Border Lines
             val borderLinePaint = Paint().apply {
                 color = AndroidColor.LTGRAY
                 strokeWidth = 1f
             }
-            canvas.drawLine(marginX, 40f, pageWidth - marginX, 40f, borderLinePaint)
-            canvas.drawLine(marginX, pageHeight - 40f, pageWidth - marginX, pageHeight - 40f, borderLinePaint)
+            canvas.drawLine(marginX, marginY - 10f, pageWidth - marginX, marginY - 10f, borderLinePaint)
+            canvas.drawLine(marginX, pageHeight - marginY + 10f, pageWidth - marginX, pageHeight - marginY + 10f, borderLinePaint)
         }
 
         fun checkPageBreak(neededHeight: Float) {
-            if (currentY + neededHeight > pageHeight - 60f) {
+            if (currentY + neededHeight > pageHeight - marginY) {
                 pdfDocument.finishPage(page)
                 pageNumber++
                 pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
                 page = pdfDocument.startPage(pageInfo)
                 canvas = page.canvas
-                currentY = 60f
+                currentY = marginY
                 drawHeaderAndFooter(canvas, pageNumber)
             }
         }
 
-        // Initial Header/Footer on Page 1
         drawHeaderAndFooter(canvas, 1)
 
-        // Draw Document Title
         checkPageBreak(30f)
         val titlePaint = Paint().apply {
             color = AndroidColor.BLACK
@@ -120,51 +144,101 @@ class PdfExporter {
         }
         val titleX = if (state.isRtl) pageWidth - marginX else marginX
         canvas.drawText(state.documentTitle, titleX, currentY + 18f, titlePaint)
-        currentY += 35f
+        currentY += 40f
 
-        // Draw Blocks
         state.blocks.forEach { block ->
             when (block) {
                 is TextBlock -> {
-                    val textStr = block.text.text
+                    val annotatedString = block.text.annotatedString
+                    val textStr = annotatedString.text
                     if (textStr.isNotEmpty()) {
-                        val textPaint = Paint().apply {
-                            color = state.textColor.toArgb()
-                            textSize = state.fontSize.toFloat().coerceIn(10f, 24f)
-                            typeface = Typeface.create(
-                                when (state.fontFamily.lowercase()) {
-                                    "times new roman", "georgia", "garamond", "cambria", "book antiqua", "palatino linotype", "aptos serif" -> Typeface.SERIF
-                                    "courier new", "consolas", "lucida console" -> Typeface.MONOSPACE
-                                    else -> Typeface.SANS_SERIF
-                                },
-                                if (state.isBold && state.isItalic) Typeface.BOLD_ITALIC
-                                else if (state.isBold) Typeface.BOLD
-                                else if (state.isItalic) Typeface.ITALIC
-                                else Typeface.NORMAL
+                        val baseFontName = state.fontFamily
+                        val baseFontSize = state.fontSize.toFloat().coerceIn(10f, 48f)
+
+                        val textPaint = TextPaint().apply {
+                            color = AndroidColor.BLACK
+                            textSize = baseFontSize
+                            isAntiAlias = true
+                            typeface = com.example.presentation.editor.font.FontEngine.getNativeTypeface(
+                                fontName = baseFontName,
+                                isBold = false,
+                                isItalic = false
                             )
-                            textAlign = when (block.alignment) {
-                                TextAlignment.LEFT -> Paint.Align.LEFT
-                                TextAlignment.CENTER -> Paint.Align.CENTER
-                                TextAlignment.RIGHT -> Paint.Align.RIGHT
-                                TextAlignment.JUSTIFY -> if (state.isRtl) Paint.Align.RIGHT else Paint.Align.LEFT
-                            }
                         }
 
-                        // Split into lines manually for simple wrap
-                        val words = textStr.split("\n")
-                        words.forEach { paragraph ->
-                            checkPageBreak(20f)
-                            val textX = when (block.alignment) {
-                                TextAlignment.LEFT -> marginX
-                                TextAlignment.CENTER -> pageWidth / 2f
-                                TextAlignment.RIGHT -> pageWidth - marginX
-                                TextAlignment.JUSTIFY -> if (state.isRtl) pageWidth - marginX else marginX
+                        val alignment = when (block.alignment) {
+                            TextAlignment.LEFT -> if (block.isRtl || state.isRtl) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL
+                            TextAlignment.CENTER -> Layout.Alignment.ALIGN_CENTER
+                            TextAlignment.RIGHT -> if (block.isRtl || state.isRtl) Layout.Alignment.ALIGN_NORMAL else Layout.Alignment.ALIGN_OPPOSITE
+                            TextAlignment.JUSTIFY -> if (block.isRtl || state.isRtl) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL
+                        }
+
+                        val paragraphs = textStr.split("\n")
+                        var currentParaStart = 0
+
+                        paragraphs.forEach { paragraphText ->
+                            if (paragraphText.isEmpty()) {
+                                currentY += baseFontSize * block.lineSpacing
+                                checkPageBreak(baseFontSize)
+                                currentParaStart += 1 // \n character
+                                return@forEach
                             }
-                            canvas.drawText(paragraph, textX, currentY + 12f, textPaint)
-                            currentY += textPaint.textSize * state.lineSpacing + 4f
+
+                            val paraEnd = currentParaStart + paragraphText.length
+                            val spannable = SpannableStringBuilder(paragraphText)
+
+                            // Apply span styles from AnnotatedString to SpannableStringBuilder
+                            annotatedString.spanStyles.forEach { span ->
+                                val overlapStart = maxOf(currentParaStart, span.start)
+                                val overlapEnd = minOf(paraEnd, span.end)
+                                if (overlapStart < overlapEnd) {
+                                    val relStart = overlapStart - currentParaStart
+                                    val relEnd = overlapEnd - currentParaStart
+                                    val style = span.item
+
+                                    if (style.fontWeight == FontWeight.Bold && style.fontStyle == FontStyle.Italic) {
+                                        spannable.setSpan(StyleSpan(Typeface.BOLD_ITALIC), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    } else if (style.fontWeight == FontWeight.Bold) {
+                                        spannable.setSpan(StyleSpan(Typeface.BOLD), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    } else if (style.fontStyle == FontStyle.Italic) {
+                                        spannable.setSpan(StyleSpan(Typeface.ITALIC), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    }
+
+                                    if (style.fontSize.value > 0) {
+                                        spannable.setSpan(AbsoluteSizeSpan(style.fontSize.value.toInt(), true), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    }
+
+                                    if (style.color != androidx.compose.ui.graphics.Color.Unspecified) {
+                                        spannable.setSpan(ForegroundColorSpan(style.color.toArgb()), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    }
+
+                                    if (style.textDecoration == TextDecoration.Underline || style.textDecoration == TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))) {
+                                        spannable.setSpan(UnderlineSpan(), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    }
+                                    if (style.textDecoration == TextDecoration.LineThrough || style.textDecoration == TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))) {
+                                        spannable.setSpan(StrikethroughSpan(), relStart, relEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                                    }
+                                }
+                            }
+
+                            val staticLayout = StaticLayout.Builder.obtain(spannable, 0, spannable.length, textPaint, contentWidth.toInt())
+                                .setAlignment(alignment)
+                                .setLineSpacing(0f, block.lineSpacing.coerceAtLeast(1.0f))
+                                .setIncludePad(false)
+                                .build()
+
+                            checkPageBreak(staticLayout.height.toFloat())
+
+                            canvas.save()
+                            canvas.translate(marginX, currentY)
+                            staticLayout.draw(canvas)
+                            canvas.restore()
+
+                            currentY += staticLayout.height + 6f
+                            currentParaStart = paraEnd + 1 // +1 for newline
                         }
                     } else {
-                        currentY += 15f
+                        currentY += 12f
                     }
                 }
 
@@ -229,38 +303,95 @@ class PdfExporter {
                     pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
                     page = pdfDocument.startPage(pageInfo)
                     canvas = page.canvas
-                    currentY = 60f
+                    currentY = marginY
                     drawHeaderAndFooter(canvas, pageNumber)
                 }
 
                 is TableBlock -> {
                     checkPageBreak(60f)
-                    val cellWidth = contentWidth / block.cols
-                    val rowHeight = 25f
-                    val tablePaint = Paint().apply {
+                    val cellWidth = contentWidth / block.cols.coerceAtLeast(1)
+                    val tableBorderPaint = Paint().apply {
                         color = AndroidColor.GRAY
                         style = Paint.Style.STROKE
                         strokeWidth = 1f
                     }
-                    val textPaint = Paint().apply {
+                    val defaultTextPaint = TextPaint().apply {
                         color = AndroidColor.BLACK
                         textSize = 10f
                     }
 
                     for (r in 0 until block.rows) {
-                        checkPageBreak(rowHeight)
+                        var maxRowHeight = 25f
+                        val staticLayouts = mutableMapOf<Int, StaticLayout>()
+
+                        for (c in 0 until block.cols) {
+                            val cellData = block.cells["${r}_${c}"]
+                            val firstTextBlock = cellData?.textBlocks?.firstOrNull()
+                            val cellText = firstTextBlock?.text?.text ?: ""
+
+                            if (cellText.isNotEmpty()) {
+                                val layout = StaticLayout.Builder.obtain(cellText, 0, cellText.length, defaultTextPaint, cellWidth.toInt() - 10)
+                                    .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                                    .build()
+                                staticLayouts[c] = layout
+                                if (layout.height + 10f > maxRowHeight) maxRowHeight = layout.height + 10f
+                            }
+                        }
+
+                        checkPageBreak(maxRowHeight)
+
                         for (c in 0 until block.cols) {
                             val cellX = marginX + (c * cellWidth)
                             val cellY = currentY
-                            canvas.drawRect(cellX, cellY, cellX + cellWidth, cellY + rowHeight, tablePaint)
-
                             val cellData = block.cells["${r}_${c}"]
-                            val cellText = cellData?.textBlocks?.firstOrNull()?.text?.text ?: ""
-                            canvas.drawText(cellText, cellX + 5f, cellY + 16f, textPaint)
+
+                            if (cellData != null && cellData.backgroundColor != androidx.compose.ui.graphics.Color.Transparent) {
+                                val cellBgPaint = Paint().apply {
+                                    color = cellData.backgroundColor.toArgb()
+                                    style = Paint.Style.FILL
+                                }
+                                canvas.drawRect(cellX, cellY, cellX + cellWidth, cellY + maxRowHeight, cellBgPaint)
+                            }
+
+                            canvas.drawRect(cellX, cellY, cellX + cellWidth, cellY + maxRowHeight, tableBorderPaint)
+
+                            val layout = staticLayouts[c]
+                            if (layout != null) {
+                                canvas.save()
+                                canvas.translate(cellX + 5f, cellY + 5f)
+                                layout.draw(canvas)
+                                canvas.restore()
+                            }
                         }
-                        currentY += rowHeight
+                        currentY += maxRowHeight
                     }
                     currentY += 10f
+                }
+
+                is ImageBlock -> {
+                    if (block.imageData != null) {
+                        try {
+                            val bmp = BitmapFactory.decodeByteArray(block.imageData, 0, block.imageData.size)
+                            if (bmp != null) {
+                                val targetWidth = (contentWidth * 0.8f).coerceAtMost(bmp.width.toFloat())
+                                val aspectRatio = bmp.height.toFloat() / bmp.width.toFloat()
+                                val targetHeight = (targetWidth * aspectRatio).coerceAtMost(300f)
+
+                                checkPageBreak(targetHeight + 20f)
+
+                                val destRect = RectF(
+                                    marginX + (contentWidth - targetWidth) / 2f,
+                                    currentY,
+                                    marginX + (contentWidth - targetWidth) / 2f + targetWidth,
+                                    currentY + targetHeight
+                                )
+                                canvas.drawBitmap(bmp, null as Rect?, destRect, null as Paint?)
+                                currentY += targetHeight + 15f
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 }
 
                 else -> {}
@@ -269,7 +400,6 @@ class PdfExporter {
 
         pdfDocument.finishPage(page)
 
-        // Write to File
         val pdfFile = File(context.cacheDir, "${state.documentTitle.replace(" ", "_")}.pdf")
         return try {
             val fileOutputStream = FileOutputStream(pdfFile)
@@ -288,3 +418,4 @@ class PdfExporter {
         }
     }
 }
+

@@ -3,6 +3,7 @@ package com.example.presentation.editor
 import android.content.Context
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.ParagraphStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -35,6 +36,33 @@ class EditorViewModel : ViewModel() {
     private val undoStack = mutableListOf<List<DocumentBlock>>()
     private val redoStack = mutableListOf<List<DocumentBlock>>()
 
+    init {
+        com.example.presentation.editor.font.FontEngine.setOnFontDownloadedListener {
+            viewModelScope.launch(Dispatchers.Main) {
+                try {
+                    val stateVal = _state.value
+                    val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock
+                    if (activeBlock != null) {
+                        val fontName = stateVal.fontFamily
+                        val newAnnotatedString = com.example.presentation.editor.font.FontEngine.applyFontToAnnotatedString(
+                            annotatedString = activeBlock.text.annotatedString,
+                            selection = activeBlock.text.selection,
+                            fontName = fontName
+                        )
+                        val newBlocks = stateVal.blocks.map { block ->
+                            if (block.id == activeBlock.id && block is TextBlock) {
+                                block.copy(text = activeBlock.text.copy(annotatedString = newAnnotatedString))
+                            } else block
+                        }
+                        _state.update { it.copy(blocks = newBlocks) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     private fun pushUndoState() {
         if (undoStack.size > 50) undoStack.removeAt(0)
         undoStack.add(_state.value.blocks)
@@ -57,6 +85,14 @@ class EditorViewModel : ViewModel() {
                                     headerText = TextFieldValue(model.headerText),
                                     footerText = TextFieldValue(model.footerText),
                                     isRtl = model.isRtl,
+                                    pageSize = model.pageSize,
+                                    pageOrientation = model.pageOrientation,
+                                    pageMargin = model.pageMargin,
+                                    pageColor = model.pageColor,
+                                    pageBorder = model.pageBorder,
+                                    watermarkText = model.watermarkText,
+                                    fontFamily = model.defaultFontFamily,
+                                    fontSize = model.defaultFontSize,
                                     documentTitle = fileName.removeSuffix(".docx").removeSuffix(".doc"),
                                     currentUri = uri,
                                     isFileMenuOpen = false
@@ -119,7 +155,8 @@ class EditorViewModel : ViewModel() {
     }
 
     fun processEvent(event: RibbonEvent) {
-        when (event) {
+        try {
+            when (event) {
             is RibbonEvent.OnEnableEditing -> {
                 _state.update { it.copy(isProtectedView = false) }
             }
@@ -133,11 +170,22 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnLoadFromCloud -> {
                 try {
                     val bytes = android.util.Base64.decode(event.base64Data, android.util.Base64.DEFAULT)
-                    val blocks = DocxImporter().import(java.io.ByteArrayInputStream(bytes))
+                    val model = DocxEngine.parseDocx(java.io.ByteArrayInputStream(bytes))
                     _state.update {
                         it.copy(
-                            blocks = blocks,
-                            activeBlockId = blocks.firstOrNull()?.id ?: "blk_initial",
+                            blocks = model.blocks,
+                            activeBlockId = model.blocks.firstOrNull()?.id ?: "blk_initial",
+                            headerText = TextFieldValue(model.headerText),
+                            footerText = TextFieldValue(model.footerText),
+                            isRtl = model.isRtl,
+                            pageSize = model.pageSize,
+                            pageOrientation = model.pageOrientation,
+                            pageMargin = model.pageMargin,
+                            pageColor = model.pageColor,
+                            pageBorder = model.pageBorder,
+                            watermarkText = model.watermarkText,
+                            fontFamily = model.defaultFontFamily,
+                            fontSize = model.defaultFontSize,
                             cloudDocId = event.cloudDocumentId
                         )
                     }
@@ -158,6 +206,14 @@ class EditorViewModel : ViewModel() {
                         headerText = TextFieldValue(event.model.headerText),
                         footerText = TextFieldValue(event.model.footerText),
                         isRtl = event.model.isRtl,
+                        pageSize = event.model.pageSize,
+                        pageOrientation = event.model.pageOrientation,
+                        pageMargin = event.model.pageMargin,
+                        pageColor = event.model.pageColor,
+                        pageBorder = event.model.pageBorder,
+                        watermarkText = event.model.watermarkText,
+                        fontFamily = event.model.defaultFontFamily,
+                        fontSize = event.model.defaultFontSize,
                         currentUri = event.uri,
                         isFileMenuOpen = false
                     )
@@ -259,6 +315,10 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnInsertImageWithUri -> {
                 insertBlockAtCursor(ImageBlock("img_${UUID.randomUUID()}", uri = event.uri, wrapMode = WrapMode.IN_LINE))
             }
+            is RibbonEvent.OnInsertImageBytes -> {
+                insertBlockAtCursor(ImageBlock("img_${UUID.randomUUID()}", imageData = event.bytes, uri = event.uri, wrapMode = WrapMode.IN_LINE))
+            }
+            is RibbonEvent.OnPickImageRequested -> {}
             is RibbonEvent.OnInsertShapeClicked -> {
                 insertBlockAtCursor(ShapeBlock("shp_${UUID.randomUUID()}", event.type))
             }
@@ -273,88 +333,171 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnCutClicked -> {}
             is RibbonEvent.OnCopyClicked -> {}
             is RibbonEvent.OnPasteClicked -> {}
+            is RibbonEvent.OnCutTextFromSelection -> {
+                pushUndoState()
+                val stateVal = _state.value
+                val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+                if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+                    val tb = stateVal.blocks[activeIdx] as TextBlock
+                    val textVal = tb.text
+                    val min = textVal.selection.min.coerceIn(0, textVal.annotatedString.length)
+                    val max = textVal.selection.max.coerceIn(0, textVal.annotatedString.length)
+                    if (min < max) {
+                        val newAnnotated = buildAnnotatedString {
+                            append(textVal.annotatedString.subSequence(0, min))
+                            append(textVal.annotatedString.subSequence(max, textVal.annotatedString.length))
+                        }
+                        val updated = tb.copy(text = TextFieldValue(annotatedString = newAnnotated, selection = TextRange(min)))
+                        val newBlocks = stateVal.blocks.toMutableList()
+                        newBlocks[activeIdx] = updated
+                        _state.update { it.copy(blocks = newBlocks) }
+                    }
+                }
+            }
+            is RibbonEvent.OnPasteTextAtSelection -> {
+                pushUndoState()
+                val stateVal = _state.value
+                val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+                if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+                    val tb = stateVal.blocks[activeIdx] as TextBlock
+                    val textVal = tb.text
+                    val min = textVal.selection.min.coerceIn(0, textVal.annotatedString.length)
+                    val max = textVal.selection.max.coerceIn(0, textVal.annotatedString.length)
+                    val newAnnotated = buildAnnotatedString {
+                        append(textVal.annotatedString.subSequence(0, min))
+                        append(event.text)
+                        append(textVal.annotatedString.subSequence(max, textVal.annotatedString.length))
+                    }
+                    val newCursorPos = min + event.text.length
+                    val updated = tb.copy(text = TextFieldValue(annotatedString = newAnnotated, selection = TextRange(newCursorPos)))
+                    val newBlocks = stateVal.blocks.toMutableList()
+                    newBlocks[activeIdx] = updated
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
+            }
             
             // Character Formatting Updates
             is RibbonEvent.OnFontFamilyChanged -> {
-                _state.update { it.copy(fontFamily = event.family) }
-                applyStyleToSelection(SpanStyle(fontSize = _state.value.fontSize.sp))
+                pushUndoState()
+                val fontName = event.family
+                com.example.presentation.editor.font.FontEngine.addRecentFont(fontName)
+                _state.update { it.copy(fontFamily = fontName) }
+                
+                val stateVal = _state.value
+                val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock
+                
+                if (activeBlock != null) {
+                    val newAnnotatedString = com.example.presentation.editor.font.FontEngine.applyFontToAnnotatedString(
+                        annotatedString = activeBlock.text.annotatedString,
+                        selection = activeBlock.text.selection,
+                        fontName = fontName
+                    )
+                    val newBlocks = stateVal.blocks.map { block ->
+                        if (block.id == activeBlock.id) {
+                            (block as TextBlock).copy(text = activeBlock.text.copy(annotatedString = newAnnotatedString))
+                        } else block
+                    }
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
             }
             is RibbonEvent.OnFontSizeChanged -> {
+                pushUndoState()
                 _state.update { it.copy(fontSize = event.size) }
                 applyStyleToSelection(SpanStyle(fontSize = event.size.sp))
             }
             is RibbonEvent.OnBoldClicked -> {
+                pushUndoState()
                 val newBold = !_state.value.isBold
                 _state.update { it.copy(isBold = newBold) }
                 applyStyleToSelection(SpanStyle(fontWeight = if (newBold) FontWeight.Bold else FontWeight.Normal))
             }
             is RibbonEvent.OnItalicClicked -> {
+                pushUndoState()
                 val newItalic = !_state.value.isItalic
                 _state.update { it.copy(isItalic = newItalic) }
                 applyStyleToSelection(SpanStyle(fontStyle = if (newItalic) FontStyle.Italic else FontStyle.Normal))
             }
             is RibbonEvent.OnUnderlineClicked -> {
+                pushUndoState()
                 val newUnderline = !_state.value.isUnderline
                 _state.update { it.copy(isUnderline = newUnderline) }
                 applyStyleToSelection(SpanStyle(textDecoration = if (newUnderline) TextDecoration.Underline else TextDecoration.None))
             }
-            is RibbonEvent.OnUnderlineStyleChanged -> { _state.update { it.copy(underlineStyle = event.style) } }
+            is RibbonEvent.OnUnderlineStyleChanged -> { 
+                pushUndoState()
+                _state.update { it.copy(underlineStyle = event.style) } 
+            }
             is RibbonEvent.OnStrikethroughClicked -> {
+                pushUndoState()
                 val newStrike = !_state.value.isStrikethrough
                 _state.update { it.copy(isStrikethrough = newStrike) }
                 applyStyleToSelection(SpanStyle(textDecoration = if (newStrike) TextDecoration.LineThrough else TextDecoration.None))
             }
             is RibbonEvent.OnSubscriptClicked -> {
+                pushUndoState()
                 val newSub = !_state.value.isSubscript
                 _state.update { it.copy(isSubscript = newSub, isSuperscript = false) }
                 applyStyleToSelection(SpanStyle(baselineShift = if (newSub) BaselineShift.Subscript else BaselineShift.None))
             }
             is RibbonEvent.OnSuperscriptClicked -> {
+                pushUndoState()
                 val newSuper = !_state.value.isSuperscript
                 _state.update { it.copy(isSuperscript = newSuper, isSubscript = false) }
                 applyStyleToSelection(SpanStyle(baselineShift = if (newSuper) BaselineShift.Superscript else BaselineShift.None))
             }
             is RibbonEvent.OnTextColorChanged -> {
+                pushUndoState()
                 _state.update { it.copy(textColor = event.color) }
                 applyStyleToSelection(SpanStyle(color = event.color))
             }
             is RibbonEvent.OnHighlightColorChanged -> {
+                pushUndoState()
                 _state.update { it.copy(highlightColor = event.color) }
                 applyStyleToSelection(SpanStyle(background = event.color))
             }
-            is RibbonEvent.OnClearFormattingClicked -> clearFormattingFromSelection()
-            is RibbonEvent.OnNumeralSystemChanged -> applyNumeralSystem(event.system)
+            is RibbonEvent.OnClearFormattingClicked -> {
+                pushUndoState()
+                clearFormattingFromSelection()
+            }
+            is RibbonEvent.OnNumeralSystemChanged -> {
+                pushUndoState()
+                applyNumeralSystem(event.system)
+            }
             
             // Paragraph Formatting
             is RibbonEvent.OnAlignmentChanged -> {
+                pushUndoState()
                 _state.update { it.copy(alignment = event.alignment) }
-                val align = when (event.alignment) {
-                    TextAlignment.LEFT -> TextAlign.Left
-                    TextAlignment.CENTER -> TextAlign.Center
-                    TextAlignment.RIGHT -> TextAlign.Right
-                    TextAlignment.JUSTIFY -> TextAlign.Justify
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(alignment = event.alignment) else block
                 }
-                applyParagraphStyleToSelection(ParagraphStyle(textAlign = align))
             }
             is RibbonEvent.OnLineSpacingChanged -> {
+                pushUndoState()
                 _state.update { it.copy(lineSpacing = event.spacing) }
-                applyParagraphStyleToSelection(ParagraphStyle(lineHeight = event.spacing.em))
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(lineSpacing = event.spacing) else block
+                }
             }
             is RibbonEvent.OnIncreaseIndentClicked -> {
+                pushUndoState()
                 _state.update { it.copy(indentLevel = it.indentLevel + 1) }
-                applyParagraphStyleToSelection(ParagraphStyle(textIndent = TextIndent(firstLine = (_state.value.indentLevel * 1.5).em, restLine = (_state.value.indentLevel * 1.5).em)))
             }
             is RibbonEvent.OnDecreaseIndentClicked -> {
+                pushUndoState()
                 _state.update { it.copy(indentLevel = maxOf(0, it.indentLevel - 1)) }
-                applyParagraphStyleToSelection(ParagraphStyle(textIndent = TextIndent(firstLine = (_state.value.indentLevel * 1.5).em, restLine = (_state.value.indentLevel * 1.5).em)))
             }
             is RibbonEvent.OnTextDirectionToggled -> {
                 val newRtl = !_state.value.isTextRtl
                 _state.update { it.copy(isTextRtl = newRtl) }
-                applyParagraphStyleToSelection(ParagraphStyle(textDirection = if (newRtl) TextDirection.Rtl else TextDirection.Ltr))
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(isRtl = newRtl) else block
+                }
             }
             is RibbonEvent.OnBulletedListToggled -> { _state.update { it.copy(isBulletedList = !it.isBulletedList, isNumberedList = false) } }
             is RibbonEvent.OnNumberedListToggled -> { _state.update { it.copy(isNumberedList = !it.isNumberedList, isBulletedList = false) } }
+            is RibbonEvent.OnSetUserError -> { _state.update { it.copy(userErrorMessage = event.message) } }
+            is RibbonEvent.OnDismissUserError -> { _state.update { it.copy(userErrorMessage = null) } }
             
             // Page Layout
             is RibbonEvent.OnPageSizeChanged -> { _state.update { it.copy(pageSize = event.size) } }
@@ -450,6 +593,10 @@ class EditorViewModel : ViewModel() {
                 }
             }
         }
+        } catch (e: Exception) {
+            android.util.Log.e("EditorViewModel", "Safe event processing caught error", e)
+            _state.update { it.copy(userErrorMessage = e.localizedMessage ?: "حدث خطأ غير متوقع أثناء معالجة العملية") }
+        }
     }
 
     private fun changeTextCase(caseType: String) {
@@ -494,8 +641,26 @@ class EditorViewModel : ViewModel() {
         val stateVal = _state.value
         val newBlocks = stateVal.blocks.map { block ->
             if (block is TextBlock) {
-                val replacedStr = block.text.text.replace(findText, replaceText, ignoreCase = true)
-                block.copy(text = block.text.copy(text = replacedStr))
+                var currentIndex = 0
+                val currentText = block.text.annotatedString.text
+                val lowerCurrent = currentText.lowercase()
+                val lowerFind = findText.lowercase()
+                
+                val builder = androidx.compose.ui.text.AnnotatedString.Builder()
+                var matchIndex = lowerCurrent.indexOf(lowerFind, currentIndex)
+                
+                while (matchIndex != -1) {
+                    builder.append(block.text.annotatedString.subSequence(currentIndex, matchIndex))
+                    builder.append(replaceText) // We lose the exact spans specifically for the replaced text length, but we keep the rest of the paragraph's spans intact
+                    currentIndex = matchIndex + findText.length
+                    matchIndex = lowerCurrent.indexOf(lowerFind, currentIndex)
+                }
+                
+                if (currentIndex < currentText.length) {
+                    builder.append(block.text.annotatedString.subSequence(currentIndex, currentText.length))
+                }
+                
+                block.copy(text = block.text.copy(annotatedString = builder.toAnnotatedString()))
             } else block
         }
         _state.update { it.copy(blocks = newBlocks, showFindReplaceDialog = false) }
@@ -559,50 +724,162 @@ class EditorViewModel : ViewModel() {
         }
     }
 
-    private fun applyStyleToSelection(spanStyle: SpanStyle) {
-        val stateVal = _state.value
-        val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock ?: return
-        val currentText = activeBlock.text
-        
-        if (currentText.selection.collapsed) {
-            // Apply to the whole block if nothing selected
-            val newAnnotatedString = buildAnnotatedString {
-                append(currentText.annotatedString)
-                addStyle(spanStyle, 0, currentText.annotatedString.length)
+    private fun applyParagraphStyleToSelection(paragraphStyle: ParagraphStyle) {
+        try {
+            val stateVal = _state.value
+            val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock ?: return
+            val currentText = activeBlock.text
+            val annotated = currentText.annotatedString
+            val totalLength = annotated.length
+            if (totalLength == 0) return
+
+            val min = if (currentText.selection.collapsed) 0 else currentText.selection.min.coerceIn(0, totalLength)
+            val max = if (currentText.selection.collapsed) totalLength else currentText.selection.max.coerceIn(0, totalLength)
+            if (min >= max) return
+
+            fun buildSafeAnnotated(filterOverlaps: Boolean): AnnotatedString {
+                val builder = AnnotatedString.Builder()
+                builder.append(annotated.text)
+
+                // Preserve span styles (characters/fonts/colors)
+                annotated.spanStyles.forEach { range ->
+                    val start = range.start.coerceIn(0, totalLength)
+                    val end = range.end.coerceIn(0, totalLength)
+                    if (start < end) {
+                        builder.addStyle(range.item, start, end)
+                    }
+                }
+
+                // Copy non-overlapping existing paragraph styles if normalizing
+                annotated.paragraphStyles.forEach { range ->
+                    val pStart = range.start.coerceIn(0, totalLength)
+                    val pEnd = range.end.coerceIn(0, totalLength)
+                    if (pStart < pEnd) {
+                        val overlaps = (pStart < max && pEnd > min)
+                        if (!filterOverlaps || !overlaps) {
+                            builder.addStyle(range.item, pStart, pEnd)
+                        }
+                    }
+                }
+
+                // Apply new paragraph style safely
+                builder.addStyle(paragraphStyle, min, max)
+                return builder.toAnnotatedString()
             }
-            val newBlocks = stateVal.blocks.map { 
-                if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
+
+            val newAnnotatedString = try {
+                buildSafeAnnotated(filterOverlaps = true)
+            } catch (e: IllegalArgumentException) {
+                // Fallback normalization: rebuild strictly without conflicting paragraph ranges
+                val fallbackBuilder = AnnotatedString.Builder()
+                fallbackBuilder.append(annotated.text)
+                annotated.spanStyles.forEach { range ->
+                    fallbackBuilder.addStyle(range.item, range.start.coerceIn(0, totalLength), range.end.coerceIn(0, totalLength))
+                }
+                fallbackBuilder.addStyle(paragraphStyle, 0, totalLength)
+                fallbackBuilder.toAnnotatedString()
+            }
+
+            val newBlocks = stateVal.blocks.map {
+                if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it
             }
             _state.update { it.copy(blocks = newBlocks) }
-            return
+        } catch (e: Exception) {
+            android.util.Log.e("EditorViewModel", "applyParagraphStyleToSelection caught error", e)
         }
-        
-        val min = currentText.selection.min.coerceIn(0, currentText.annotatedString.length)
-        val max = currentText.selection.max.coerceIn(0, currentText.annotatedString.length)
-
-        val newAnnotatedString = buildAnnotatedString {
-            append(currentText.annotatedString)
-            addStyle(spanStyle, min, max)
-        }
-        
-        val newBlocks = stateVal.blocks.map { 
-            if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
-        }
-        _state.update { it.copy(blocks = newBlocks) }
     }
 
-    private fun applyParagraphStyleToSelection(paragraphStyle: ParagraphStyle) {
-        val stateVal = _state.value
-        val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock ?: return
-        val currentText = activeBlock.text
-        
-        val newAnnotatedString = buildAnnotatedString {
-            append(currentText.annotatedString)
-            addStyle(paragraphStyle, 0, currentText.annotatedString.length)
+    private fun applyStyleToSelection(spanStyle: SpanStyle) {
+        try {
+            val stateVal = _state.value
+            val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock ?: return
+            val currentText = activeBlock.text
+            val totalLength = currentText.annotatedString.length
+            
+            if (currentText.selection.collapsed || totalLength == 0) {
+                // Apply to the whole block if nothing is explicitly selected
+                if (totalLength > 0) {
+                    val builder = AnnotatedString.Builder()
+                    builder.append(currentText.annotatedString.text)
+                    
+                    // Copy existing span styles with property overriding
+                    currentText.annotatedString.spanStyles.forEach { range ->
+                        val start = range.start.coerceIn(0, totalLength)
+                        val end = range.end.coerceIn(0, totalLength)
+                        if (start < end) {
+                            val updatedItem = if (spanStyle.fontFamily != null) {
+                                range.item.copy(fontFamily = spanStyle.fontFamily)
+                            } else if (spanStyle.fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) {
+                                range.item.copy(fontSize = spanStyle.fontSize)
+                            } else if (spanStyle.color != Color.Unspecified) {
+                                range.item.copy(color = spanStyle.color)
+                            } else if (spanStyle.background != Color.Unspecified) {
+                                range.item.copy(background = spanStyle.background)
+                            } else {
+                                range.item
+                            }
+                            builder.addStyle(updatedItem, start, end)
+                        }
+                    }
+                    builder.addStyle(spanStyle, 0, totalLength)
+                    
+                    val newAnnotatedString = builder.toAnnotatedString()
+                    val newBlocks = stateVal.blocks.map { 
+                        if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
+                    }
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
+                return
+            }
+            
+            val min = currentText.selection.min.coerceIn(0, totalLength)
+            val max = currentText.selection.max.coerceIn(0, totalLength)
+
+            if (min < max) {
+                val builder = AnnotatedString.Builder()
+                builder.append(currentText.annotatedString.text)
+                
+                // Copy existing spans with property overriding for overlapping range
+                currentText.annotatedString.spanStyles.forEach { range ->
+                    val start = range.start.coerceIn(0, totalLength)
+                    val end = range.end.coerceIn(0, totalLength)
+                    if (start < end) {
+                        val updatedItem = if (start < max && end > min) {
+                            if (spanStyle.fontFamily != null) {
+                                range.item.copy(fontFamily = spanStyle.fontFamily)
+                            } else if (spanStyle.fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) {
+                                range.item.copy(fontSize = spanStyle.fontSize)
+                            } else if (spanStyle.color != Color.Unspecified) {
+                                range.item.copy(color = spanStyle.color)
+                            } else if (spanStyle.background != Color.Unspecified) {
+                                range.item.copy(background = spanStyle.background)
+                            } else {
+                                range.item
+                            }
+                        } else {
+                            range.item
+                        }
+                        builder.addStyle(updatedItem, start, end)
+                    }
+                }
+                // Apply the new targeted span style to the selected range
+                builder.addStyle(spanStyle, min, max)
+                
+                val newAnnotatedString = builder.toAnnotatedString()
+                val newBlocks = stateVal.blocks.map { 
+                    if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
+                }
+                _state.update { it.copy(blocks = newBlocks) }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("EditorViewModel", "applyStyleToSelection caught error", e)
         }
-        
-        val newBlocks = stateVal.blocks.map { 
-            if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
+    }
+
+    private fun updateActiveBlock(update: (DocumentBlock) -> DocumentBlock) {
+        val stateVal = _state.value
+        val newBlocks = stateVal.blocks.map {
+            if (it.id == stateVal.activeBlockId) update(it) else it
         }
         _state.update { it.copy(blocks = newBlocks) }
     }

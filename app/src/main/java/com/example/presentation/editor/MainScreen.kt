@@ -42,6 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.presentation.editor.components.DocumentCanvas
 import com.example.presentation.editor.components.FileMenuScreen
 import com.example.presentation.editor.components.WordRibbon
+import com.example.presentation.editor.components.ComprehensiveGroupDetailsDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,6 +95,26 @@ fun MainScreen(
         }
     }
     
+    // Image Picker Launcher
+    val pickImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { imageUri ->
+            coroutineScope.launch {
+                val bytes = withContext(Dispatchers.IO) {
+                    try {
+                        context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+                if (bytes != null) {
+                    viewModel.processEvent(RibbonEvent.OnInsertImageBytes(bytes, imageUri.toString()))
+                }
+            }
+        }
+    }
+    
     // SAF Launcher for Saving Files
     val saveFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
@@ -122,6 +143,7 @@ fun MainScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .imePadding()
                     .background(Color(0xFFE5E9EE))
             ) {
                 // Desktop Ribbon UI
@@ -143,6 +165,54 @@ fun MainScreen(
                             } else saveFileLauncher.launch("${state.documentTitle}.docx")
                         } else if (it is RibbonEvent.OnExportPdfClicked) {
                             viewModel.exportPdf(context)
+                        } else if (it is RibbonEvent.OnPickImageRequested) {
+                            pickImageLauncher.launch("image/*")
+                        } else if (it is RibbonEvent.OnCopyClicked) {
+                            val activeBlock = state.blocks.find { b -> b.id == state.activeBlockId } as? TextBlock
+                            if (activeBlock != null) {
+                                val textVal = activeBlock.text
+                                val min = textVal.selection.min.coerceIn(0, textVal.annotatedString.length)
+                                val max = textVal.selection.max.coerceIn(0, textVal.annotatedString.length)
+                                val textToCopy = if (min < max) {
+                                    textVal.annotatedString.subSequence(min, max).text
+                                } else {
+                                    textVal.annotatedString.text
+                                }
+                                if (textToCopy.isNotEmpty()) {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Copied Text", textToCopy)
+                                    clipboard?.setPrimaryClip(clip)
+                                }
+                            }
+                        } else if (it is RibbonEvent.OnCutClicked) {
+                            val activeBlock = state.blocks.find { b -> b.id == state.activeBlockId } as? TextBlock
+                            if (activeBlock != null && !state.isProtectedView) {
+                                val textVal = activeBlock.text
+                                val min = textVal.selection.min.coerceIn(0, textVal.annotatedString.length)
+                                val max = textVal.selection.max.coerceIn(0, textVal.annotatedString.length)
+                                val textToCopy = if (min < max) {
+                                    textVal.annotatedString.subSequence(min, max).text
+                                } else {
+                                    textVal.annotatedString.text
+                                }
+                                if (textToCopy.isNotEmpty()) {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Cut Text", textToCopy)
+                                    clipboard?.setPrimaryClip(clip)
+                                    
+                                    // Remove the text
+                                    viewModel.processEvent(RibbonEvent.OnCutTextFromSelection)
+                                }
+                            }
+                        } else if (it is RibbonEvent.OnPasteClicked) {
+                            if (!state.isProtectedView) {
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                val clipItem = clipboard?.primaryClip?.getItemAt(0)
+                                val textToPaste = clipItem?.text?.toString() ?: ""
+                                if (textToPaste.isNotEmpty()) {
+                                    viewModel.processEvent(RibbonEvent.OnPasteTextAtSelection(textToPaste))
+                                }
+                            }
                         } else {
                             viewModel.processEvent(it)
                         }
@@ -322,11 +392,40 @@ fun MainScreen(
             }
 
             state.activeGroupDetailsDialog?.let { groupName ->
-                GroupDetailsDialog(
+                ComprehensiveGroupDetailsDialog(
                     groupName = groupName,
                     state = state,
                     onEvent = { viewModel.processEvent(it) },
                     onDismiss = { viewModel.processEvent(RibbonEvent.OnDismissGroupDetails) }
+                )
+            }
+
+            state.userErrorMessage?.let { errMsg ->
+                AlertDialog(
+                    onDismissRequest = { viewModel.processEvent(RibbonEvent.OnDismissUserError) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "Alert",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    },
+                    title = {
+                        Text(
+                            text = if (state.isRtl) "تنبيه بالنظام" else "System Notice",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Text(text = errMsg)
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = { viewModel.processEvent(RibbonEvent.OnDismissUserError) }
+                        ) {
+                            Text(text = if (state.isRtl) "حسناً" else "OK")
+                        }
+                    }
                 )
             }
         }
@@ -339,6 +438,8 @@ fun EditorStatusBar(
     onEvent: (RibbonEvent) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showZoomDropdown by remember { mutableStateOf(false) }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -372,12 +473,115 @@ fun EditorStatusBar(
                     )
                 }
 
-                Text(
-                    text = if (state.isRtl) "العرض: ${(state.zoomScale * 100).toInt()}%" else "Zoom: ${(state.zoomScale * 100).toInt()}%",
-                    fontSize = 11.sp,
-                    color = Color(0xFF475569),
-                    fontWeight = FontWeight.Medium
-                )
+                Surface(
+                    color = Color(0xFFE2E8F0),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.clickable { showZoomDropdown = true }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (state.isRtl) "عرض الجوال الذكي: ${(state.zoomScale * 100).toInt()}%" else "Smart Mobile Zoom: ${(state.zoomScale * 100).toInt()}%",
+                            fontSize = 11.sp,
+                            color = Color(0xFF0F172A),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Zoom Presets",
+                            tint = Color(0xFF475569),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showZoomDropdown,
+                    onDismissRequest = { showZoomDropdown = false }
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (state.isRtl) "📱 تكبير الجوال الذكي (130%)" else "📱 Smart Mobile Zoom (130%)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = if (state.isRtl) "عرض مريح للعين على الهاتف مع حفظ خط Windows الأصلي (12pt)" else "Comfortable phone reading with original Windows font size (12pt)",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        },
+                        onClick = {
+                            onEvent(RibbonEvent.OnZoomChanged(1.30f))
+                            showZoomDropdown = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (state.isRtl) "📱 تكبير قراءة محدد (150%)" else "📱 Comfortable Reading Zoom (150%)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = if (state.isRtl) "تكبير واضح جداً للشاشات الصغيرة" else "Extra clear for smaller phone displays",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        },
+                        onClick = {
+                            onEvent(RibbonEvent.OnZoomChanged(1.50f))
+                            showZoomDropdown = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (state.isRtl) "🖥️ حجم الويندوز الأصلي (100%)" else "🖥️ Original Windows Size (100%)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = if (state.isRtl) "معاينة الطباعة والمستند بالحجم الأصلي 1:1" else "Exact 1:1 print preview size",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        },
+                        onClick = {
+                            onEvent(RibbonEvent.OnZoomChanged(1.0f))
+                            showZoomDropdown = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (state.isRtl) "📖 عرض الجوال المرن (Web Reflow)" else "📖 Mobile Reflow View",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = if (state.isRtl) "إعادة تشكيل النصوص تلقائياً لشاشة الهاتف بدون حواف" else "Continuous text reflow for small screens",
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        },
+                        onClick = {
+                            onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT))
+                            showZoomDropdown = false
+                        }
+                    )
+                }
             }
 
             // Dedicated Zoom & View Mode Controls (Right section)
@@ -441,7 +645,9 @@ fun EditorStatusBar(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF1E293B),
-                    modifier = Modifier.padding(horizontal = 2.dp)
+                    modifier = Modifier
+                        .clickable { showZoomDropdown = true }
+                        .padding(horizontal = 2.dp)
                 )
 
                 IconButton(
@@ -459,19 +665,19 @@ fun EditorStatusBar(
                 Spacer(modifier = Modifier.width(4.dp))
 
                 OutlinedButton(
-                    onClick = { onEvent(RibbonEvent.OnZoomChanged(1.0f)) },
+                    onClick = { onEvent(RibbonEvent.OnZoomChanged(1.30f)) },
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                     modifier = Modifier.height(22.dp),
                     shape = RoundedCornerShape(11.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.FitScreen,
-                        contentDescription = "100%",
+                        contentDescription = "Smart Mobile Zoom",
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(3.dp))
                     Text(
-                        text = "100%",
+                        text = "Smart",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -646,9 +852,24 @@ fun FindReplaceDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupDetailsDialog(
+    groupName: String,
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ComprehensiveGroupDetailsDialog(
+        groupName = groupName,
+        state = state,
+        onEvent = onEvent,
+        onDismiss = onDismiss
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LegacyOldDetailsDialog(
     groupName: String,
     state: EditorState,
     onEvent: (RibbonEvent) -> Unit,
@@ -731,42 +952,13 @@ fun GroupDetailsDialog(
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 
-                                val fontFamilies = listOf(
-                                    "Aptos", "Aptos Display", "Aptos Serif",
-                                    "Arial", "Arial Black", "Arial Narrow", 
-                                    "Calibri", "Calibri Light", "Cambria", "Candara", "Century Gothic",
-                                    "Comic Sans MS", "Consolas", "Constantia", "Corbel", "Courier New",
-                                    "Franklin Gothic Medium", "Garamond", "Georgia", "Impact", 
-                                    "Lucida Console", "Lucida Sans Unicode", "Palatino Linotype",
-                                    "Segoe UI", "Segoe UI Light", "Segoe UI Semibold", 
-                                    "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana",
-                                    "Aldhabi", "Amiri", "Andalus", "Arabic Typesetting", "Cairo", 
-                                    "Dubai", "Kufi", "Naskh", "Sakkal Majalla", "Simplified Arabic", "Traditional Arabic"
-                                )
-                                
-                                val fontDescriptions = mapOf(
-                                    "Aptos" to "لاتيني حديث", "Aptos Display" to "حديث عريض", "Aptos Serif" to "حديث مزخرف",
-                                    "Arial" to "أساسي", "Arial Black" to "أساسي عريض", "Arial Narrow" to "أساسي نحيف",
-                                    "Calibri" to "افتراضي (أوفيس)", "Calibri Light" to "افتراضي رفيع",
-                                    "Cambria" to "رسمي", "Candara" to "أنيق", "Century Gothic" to "هندسي",
-                                    "Comic Sans MS" to "عفوي", "Consolas" to "برمجي", "Constantia" to "رسمي", "Corbel" to "حديث",
-                                    "Courier New" to "آلة كاتبة", "Franklin Gothic Medium" to "عريض", "Garamond" to "كلاسيكي قديم",
-                                    "Georgia" to "كلاسيكي", "Impact" to "ملصقات", "Lucida Console" to "برمجي",
-                                    "Lucida Sans Unicode" to "رموز دولية", "Palatino Linotype" to "كتابي",
-                                    "Segoe UI" to "واجهات", "Segoe UI Light" to "واجهات رفيع", "Segoe UI Semibold" to "واجهات عريض",
-                                    "Tahoma" to "شائع", "Times New Roman" to "رسمي كلاسيكي",
-                                    "Trebuchet MS" to "حديث", "Verdana" to "واضح للشاشات",
-                                    "Aldhabi" to "عربي ديواني", "Amiri" to "عربي نسخ", "Andalus" to "عربي أندلسي",
-                                    "Arabic Typesetting" to "عربي طباعي", "Cairo" to "عربي حديث",
-                                    "Dubai" to "عربي معاصر", "Kufi" to "عربي كوفي", "Naskh" to "عربي نسخ قياسي",
-                                    "Sakkal Majalla" to "عربي مجلات", "Simplified Arabic" to "عربي مبسط", "Traditional Arabic" to "عربي تقليدي"
-                                )
+                                val allFonts = com.example.presentation.editor.components.AppFonts.allFonts
                                 
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(130.dp)
-                                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(2.dp))
+                                        .height(170.dp)
+                                        .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(4.dp))
                                         .background(Color.White)
                                 ) {
                                     Column(
@@ -774,28 +966,52 @@ fun GroupDetailsDialog(
                                             .fillMaxSize()
                                             .verticalScroll(rememberScrollState())
                                     ) {
-                                        fontFamilies.forEach { font ->
-                                            val isSelected = state.fontFamily == font
+                                        allFonts.forEach { fontItem ->
+                                            val isSelected = state.fontFamily.equals(fontItem.name, ignoreCase = true)
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
                                                     .background(if (isSelected) Color(0xFF0078D4) else Color.Transparent)
-                                                    .clickable { onEvent(RibbonEvent.OnFontFamilyChanged(font)) }
+                                                    .clickable { onEvent(RibbonEvent.OnFontFamilyChanged(fontItem.name)) }
                                                     .padding(horizontal = 8.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(
-                                                    text = font, 
-                                                    fontSize = 14.sp,
-                                                    fontFamily = com.example.presentation.editor.components.getPreviewFontFamily(font),
-                                                    color = if (isSelected) Color.White else Color(0xFF1E293B)
-                                                )
-                                                Spacer(modifier = Modifier.weight(1f))
-                                                Text(
-                                                    text = fontDescriptions[font] ?: "",
-                                                    fontSize = 10.sp,
-                                                    color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF94A3B8)
-                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = fontItem.name, 
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isSelected) Color.White else Color(0xFF1E293B)
+                                                        )
+                                                        Text(
+                                                            text = "(${fontItem.arabicName})", 
+                                                            fontSize = 11.sp,
+                                                            color = if (isSelected) Color(0xFFE2E8F0) else Color(0xFF64748B)
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = "بسم الله - النموذج التجريبي",
+                                                        fontSize = 14.sp,
+                                                        fontFamily = com.example.presentation.editor.components.AppFonts.getFontFamily(fontItem.name),
+                                                        color = if (isSelected) Color.White else Color(0xFF0F172A)
+                                                    )
+                                                }
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (isSelected) Color.White.copy(alpha = 0.25f) else Color(0xFFF1F5F9)
+                                                ) {
+                                                    Text(
+                                                        text = if (state.isRtl) fontItem.subCategory.titleAr else fontItem.subCategory.titleEn,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = if (isSelected) Color.White else Color(0xFF475569),
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1010,12 +1226,7 @@ fun GroupDetailsDialog(
                                 ) {
                                     Text(
                                         text = if (state.isRtl) "أبجد هوز - مستند مايكروسوفت وورد" else "AaBbCcYyZz - Microsoft Word Preview",
-                                        fontFamily = when (state.fontFamily) {
-                                            "Cairo" -> androidx.compose.ui.text.font.FontFamily.SansSerif
-                                            "Amiri" -> androidx.compose.ui.text.font.FontFamily.Serif
-                                            "Courier New" -> androidx.compose.ui.text.font.FontFamily.Monospace
-                                            else -> androidx.compose.ui.text.font.FontFamily.Default
-                                        },
+                                        fontFamily = com.example.presentation.editor.components.AppFonts.getFontFamily(state.fontFamily),
                                         fontSize = state.fontSize.sp,
                                         fontWeight = if (state.isBold) FontWeight.Bold else FontWeight.Normal,
                                         fontStyle = if (state.isItalic) FontStyle.Italic else FontStyle.Normal,

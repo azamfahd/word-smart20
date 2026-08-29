@@ -62,7 +62,7 @@ data class EditorState(
     val pageSecondaryColor: Color? = null,
     
     // Canvas Zoom & Pan & View Customization (Windows Style)
-    val zoomScale: Float = 1f,
+    val zoomScale: Float = 1.30f,
     val viewMode: ViewMode = ViewMode.PRINT_LAYOUT,
     
     // Localization & Typography
@@ -77,7 +77,8 @@ data class EditorState(
     val exportedPdfUri: Uri? = null,
     val isProtectedView: Boolean = false,
     val canUndo: Boolean = false,
-    val canRedo: Boolean = false
+    val canRedo: Boolean = false,
+    val userErrorMessage: String? = null
 )
 
 sealed class DocumentBlock {
@@ -246,6 +247,8 @@ sealed class RibbonEvent {
     // Insert Tab Actions
     data class OnInsertTableClicked(val rows: Int, val cols: Int) : RibbonEvent()
     data class OnInsertImageWithUri(val uri: String) : RibbonEvent()
+    data class OnInsertImageBytes(val bytes: ByteArray, val uri: String = "") : RibbonEvent()
+    object OnPickImageRequested : RibbonEvent()
     data class OnInsertShapeClicked(val type: ShapeType) : RibbonEvent()
     object OnInsertPageBreakClicked : RibbonEvent()
     object OnInsertPageNumberClicked : RibbonEvent()
@@ -257,6 +260,8 @@ sealed class RibbonEvent {
     object OnCutClicked : RibbonEvent()
     object OnCopyClicked : RibbonEvent()
     object OnPasteClicked : RibbonEvent()
+    object OnCutTextFromSelection : RibbonEvent()
+    data class OnPasteTextAtSelection(val text: String) : RibbonEvent()
     
     // Character Formatting
     data class OnFontFamilyChanged(val family: String) : RibbonEvent()
@@ -315,4 +320,6 @@ sealed class RibbonEvent {
     object OnInsertSignatureLineClicked : RibbonEvent()
     data class OnInsertSymbolClicked(val symbol: String) : RibbonEvent()
     object OnEnableEditing : RibbonEvent()
+    data class OnSetUserError(val message: String) : RibbonEvent()
+    object OnDismissUserError : RibbonEvent()
 }

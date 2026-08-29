@@ -22,7 +22,15 @@ data class DocumentModel(
     val blocks: List<DocumentBlock>,
     val headerText: String = "",
     val footerText: String = "",
-    val isRtl: Boolean = false
+    val isRtl: Boolean = false,
+    val pageSize: PageSize = PageSize.A4,
+    val pageOrientation: PageOrientation = PageOrientation.PORTRAIT,
+    val pageMargin: PageMargin = PageMargin.NORMAL,
+    val pageColor: Color = Color.White,
+    val pageBorder: PageBorder = PageBorder(),
+    val watermarkText: String = "",
+    val defaultFontFamily: String = "Calibri",
+    val defaultFontSize: Int = 12
 )
 
 object DocxEngine {
@@ -32,27 +40,119 @@ object DocxEngine {
         var headerContent = ""
         var footerContent = ""
         var detectedRtl = false
+        var detectedPageSize = PageSize.A4
+        var detectedOrientation = PageOrientation.PORTRAIT
+        var detectedMargin = PageMargin.NORMAL
+        var detectedPageColor = Color.White
+        var detectedPageBorder = PageBorder()
+        var detectedWatermark = ""
+        var defaultFontFamily = "Calibri"
+        var defaultFontSize = 12
+
+        val fontFrequencyMap = mutableMapOf<String, Int>()
+        val sizeFrequencyMap = mutableMapOf<Int, Int>()
 
         try {
             val document = XWPFDocument(inputStream)
 
+            // 1. Parse Section Properties (pgSz, pgMar, pgBorders)
+            try {
+                val body = document.document.body
+                val sectPr = if (body != null && body.isSetSectPr) body.sectPr else null
+                if (sectPr != null) {
+                    if (sectPr.isSetPgSz) {
+                        val pgSz = sectPr.pgSz
+                        val w = pgSz.w?.toString()?.toLongOrNull() ?: 11906L
+                        val h = pgSz.h?.toString()?.toLongOrNull() ?: 16838L
+                        val orient = if (pgSz.isSetOrient) pgSz.orient.toString() else ""
+
+                        val isLandscape = orient.equals("LANDSCAPE", ignoreCase = true) || w > h
+                        detectedOrientation = if (isLandscape) PageOrientation.LANDSCAPE else PageOrientation.PORTRAIT
+
+                        val minDim = minOf(w, h)
+                        val maxDim = maxOf(w, h)
+
+                        detectedPageSize = when {
+                            minDim < 9000L -> PageSize.A5
+                            minDim in 11000L..12100L -> PageSize.A4
+                            minDim in 12100L..13500L -> if (maxDim > 18000L) PageSize.LEGAL else PageSize.LETTER
+                            minDim > 14000L -> PageSize.A3
+                            else -> PageSize.A4
+                        }
+                    }
+
+                    if (sectPr.isSetPgMar) {
+                        val pgMar = sectPr.pgMar
+                        val top = pgMar.top?.toString()?.toLongOrNull() ?: 1440L
+                        val left = pgMar.left?.toString()?.toLongOrNull() ?: 1440L
+
+                        detectedMargin = when {
+                            top <= 800L && left <= 800L -> PageMargin.NARROW
+                            left >= 2000L -> PageMargin.WIDE
+                            left in 1000L..1200L -> PageMargin.MODERATE
+                            else -> PageMargin.NORMAL
+                        }
+                    }
+
+                    if (sectPr.isSetPgBorders) {
+                        val pgBorders = sectPr.pgBorders
+                        val topB = if (pgBorders.isSetTop) pgBorders.top else null
+                        if (topB != null && topB.`val` != null && topB.`val` != org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder.NONE) {
+                            val valStr = topB.`val`.toString().lowercase()
+                            val bStyle = when {
+                                valStr.contains("dash") -> BorderStyle.DASHED
+                                valStr.contains("dot") -> BorderStyle.DOTTED
+                                valStr.contains("double") -> BorderStyle.DOUBLE
+                                else -> BorderStyle.SOLID
+                            }
+                            val colorHex = topB.color?.toString()
+                            val borderCol = parseHexColor(colorHex) ?: Color.Black
+                            val wPt = (topB.sz?.toString()?.toFloatOrNull() ?: 4f) / 8f
+                            detectedPageBorder = PageBorder(
+                                setting = BorderSetting.BOX,
+                                style = bStyle,
+                                color = borderCol,
+                                widthPt = wPt.coerceAtLeast(0.5f)
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 2. Parse Page Background Color
+            try {
+                val bg = document.document.background
+                if (bg != null && bg.color != null) {
+                    val hex = bg.color.toString()
+                    parseHexColor(hex)?.let { detectedPageColor = it }
+                }
+            } catch (e: Exception) {}
+
+            // 3. Header & Footer & Watermark
             try {
                 val header = document.headerList.firstOrNull()
                 if (header != null && header.text.isNotBlank()) {
                     headerContent = header.text.trim()
+                    if (headerContent.contains("DRAFT", ignoreCase = true) || headerContent.contains("مسودة", ignoreCase = true)) {
+                        detectedWatermark = "مسودة"
+                    } else if (headerContent.contains("CONFIDENTIAL", ignoreCase = true) || headerContent.contains("سري", ignoreCase = true)) {
+                        detectedWatermark = "سري للغاية"
+                    }
                 }
                 val footer = document.footerList.firstOrNull()
                 if (footer != null && footer.text.isNotBlank()) {
                     footerContent = footer.text.trim()
                 }
-            } catch (e: Exception) {
-            }
+            } catch (e: Exception) {}
 
+            // 4. Parse Body Elements
             for (element in document.bodyElements) {
                 when (element.elementType) {
                     BodyElementType.PARAGRAPH -> {
                         val paragraph = element as XWPFParagraph
-                        val parsedBlocks = parseParagraph(paragraph)
+                        val parsedBlocks = parseParagraph(paragraph, fontFrequencyMap, sizeFrequencyMap)
                         blocks.addAll(parsedBlocks)
                         if (parsedBlocks.any { it is TextBlock && it.isRtl }) {
                             detectedRtl = true
@@ -61,41 +161,22 @@ object DocxEngine {
 
                     BodyElementType.TABLE -> {
                         val table = element as XWPFTable
-                        val rows = table.rows.size
-                        val cols = if (rows > 0) table.rows.maxOfOrNull { it.tableCells.size } ?: 0 else 0
-                        val cells = mutableMapOf<String, TableCellModel>()
-
-                        val isTableRtl = try { table.ctTbl?.tblPr?.bidiVisual != null } catch (e: Exception) { false }
-
-                        for (r in 0 until rows) {
-                            val row = table.getRow(r)
-                            if (row == null) continue
-                            val rowCells = row.tableCells
-                            for (c in 0 until cols) {
-                                val cell = if (c < rowCells.size) rowCells[c] else null
-                                val cellTextBlocks = mutableListOf<TextBlock>()
-                                var cellBgColor = Color.Transparent
-
-                                if (cell != null) {
-                                    val hexColor = cell.color
-                                    cellBgColor = parseHexColor(hexColor) ?: Color.Transparent
-                                    
-                                    for (cellPara in cell.paragraphs) {
-                                        val paraBlocks = parseParagraph(cellPara)
-                                        cellTextBlocks.addAll(paraBlocks.filterIsInstance<TextBlock>())
-                                    }
-                                }
-                                cells["${r}_${c}"] = TableCellModel(cellTextBlocks, cellBgColor, isTableRtl)
-                            }
-                        }
-
-                        if (rows > 0 && cols > 0) {
-                            blocks.add(TableBlock("tbl_${UUID.randomUUID()}", rows, cols, cells, isTableRtl))
+                        val tableBlock = parseTable(table, fontFrequencyMap, sizeFrequencyMap)
+                        if (tableBlock != null) {
+                            blocks.add(tableBlock)
+                            if (tableBlock.isRtl) detectedRtl = true
                         }
                     }
 
                     else -> {}
                 }
+            }
+
+            if (fontFrequencyMap.isNotEmpty()) {
+                defaultFontFamily = fontFrequencyMap.maxByOrNull { it.value }?.key ?: "Calibri"
+            }
+            if (sizeFrequencyMap.isNotEmpty()) {
+                defaultFontSize = sizeFrequencyMap.maxByOrNull { it.value }?.key ?: 12
             }
 
             document.close()
@@ -111,24 +192,31 @@ object DocxEngine {
             blocks = blocks,
             headerText = headerContent,
             footerText = footerContent,
-            isRtl = detectedRtl
+            isRtl = detectedRtl,
+            pageSize = detectedPageSize,
+            pageOrientation = detectedOrientation,
+            pageMargin = detectedMargin,
+            pageColor = detectedPageColor,
+            pageBorder = detectedPageBorder,
+            watermarkText = detectedWatermark,
+            defaultFontFamily = defaultFontFamily,
+            defaultFontSize = defaultFontSize
         )
     }
 
-    private fun parseParagraph(paragraph: XWPFParagraph): List<DocumentBlock> {
+    private fun parseParagraph(
+        paragraph: XWPFParagraph,
+        fontFreq: MutableMap<String, Int>,
+        sizeFreq: MutableMap<Int, Int>
+    ): List<DocumentBlock> {
         val blocks = mutableListOf<DocumentBlock>()
-        
+
         if (paragraph.isPageBreak) {
             blocks.add(PageBreakBlock("brk_${UUID.randomUUID()}"))
         }
 
-        val runs = paragraph.runs
-        val containsBreak = runs.any { run -> 
-            val t = run.text() ?: ""
-            t.contains("\u000c")
-        }
-
         var isParagraphRtl = false
+
         val align = when (paragraph.alignment) {
             ParagraphAlignment.CENTER -> TextAlignment.CENTER
             ParagraphAlignment.RIGHT -> {
@@ -136,7 +224,15 @@ object DocxEngine {
                 TextAlignment.RIGHT
             }
             ParagraphAlignment.BOTH -> TextAlignment.JUSTIFY
-            else -> TextAlignment.LEFT
+            else -> {
+                val jcVal = try { paragraph.ctp?.pPr?.jc?.`val`?.toString()?.lowercase() } catch (e: Exception) { null }
+                when (jcVal) {
+                    "center" -> TextAlignment.CENTER
+                    "right" -> { isParagraphRtl = true; TextAlignment.RIGHT }
+                    "both" -> TextAlignment.JUSTIFY
+                    else -> TextAlignment.LEFT
+                }
+            }
         }
 
         val bidi = try { paragraph.ctp?.pPr?.bidi } catch (e: Exception) { null }
@@ -144,12 +240,36 @@ object DocxEngine {
             isParagraphRtl = true
         }
 
-        val spacing = try { 
-            val spacingBetween = paragraph.spacingBetween
-            if (spacingBetween > 0) (spacingBetween / 240.0).toFloat().coerceAtLeast(1f) else 1.15f
+        val spacing = try {
+            val spacingLine = paragraph.ctp?.pPr?.spacing?.line?.toString()?.toDoubleOrNull()
+            if (spacingLine != null && spacingLine > 0) {
+                (spacingLine / 240.0).toFloat().coerceIn(1.0f, 3.0f)
+            } else {
+                val spacingBetween = paragraph.spacingBetween
+                if (spacingBetween > 0) (spacingBetween / 240.0).toFloat().coerceAtLeast(1.0f) else 1.15f
+            }
         } catch (e: Exception) { 1.15f }
 
+        var listPrefix = ""
+        try {
+            val numPr = paragraph.ctp?.pPr?.numPr
+            if (numPr != null) {
+                val numId = numPr.numId?.`val`?.toString()
+                if (!numId.isNullOrEmpty() && numId != "0") {
+                    val ilvl = numPr.ilvl?.`val`?.toString()?.toIntOrNull() ?: 0
+                    val indentStr = "  ".repeat(ilvl)
+                    listPrefix = "$indentStr• "
+                }
+            }
+        } catch (e: Exception) {}
+
+        val runs = paragraph.runs
         var builder = AnnotatedString.Builder()
+
+        if (listPrefix.isNotEmpty()) {
+            builder.append(listPrefix)
+        }
+
         var runCount = 0
 
         fun flushText() {
@@ -164,31 +284,36 @@ object DocxEngine {
                     )
                 )
                 builder = AnnotatedString.Builder()
+                if (listPrefix.isNotEmpty()) {
+                    builder.append(listPrefix)
+                }
                 runCount = 0
             }
         }
 
         if (runs.isEmpty()) {
-            if (paragraph.text.isNotEmpty()) {
+            val pText = paragraph.text
+            if (pText.isNotEmpty()) {
+                if (pText.any { it in '\u0600'..'\u06FF' || it in '\u0750'..'\u077F' }) {
+                    isParagraphRtl = true
+                }
                 blocks.add(
                     TextBlock(
                         id = "blk_${UUID.randomUUID()}",
-                        text = TextFieldValue(paragraph.text),
+                        text = TextFieldValue((if (listPrefix.isNotEmpty()) listPrefix else "") + pText),
                         alignment = align,
                         lineSpacing = spacing,
                         isRtl = isParagraphRtl
                     )
                 )
             }
-            if (containsBreak) {
-                blocks.add(PageBreakBlock("brk_${UUID.randomUUID()}"))
-            }
             return blocks
         }
 
         for (run in runs) {
             val runText = run.text() ?: ""
-            if (runText.any { it in '\u0600'..'\u06FF' || it in '\u0750'..'\u077F' }) {
+            val isArabic = runText.any { it in '\u0600'..'\u06FF' || it in '\u0750'..'\u077F' || it in '\u08A0'..'\u08FF' || it in '\uFB50'..'\uFDFF' || it in '\uFE70'..'\uFEFF' }
+            if (isArabic) {
                 isParagraphRtl = true
             }
 
@@ -208,39 +333,51 @@ object DocxEngine {
 
             if (startIdx < endIdx) {
                 runCount++
-                val fontWeight = if (run.isBold) FontWeight.Bold else FontWeight.Normal
-                val fontStyle = if (run.isItalic) FontStyle.Italic else FontStyle.Normal
+
+                val ctr = run.ctr
+                val rPr = if (ctr.isSetRPr) ctr.rPr else null
+
+                val isBold = run.isBold || (rPr != null && (rPr.sizeOfBArray() > 0 || rPr.sizeOfBCsArray() > 0))
+                val fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal
+
+                val isItalic = run.isItalic || (rPr != null && (rPr.sizeOfIArray() > 0 || rPr.sizeOfICsArray() > 0))
+                val fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal
+
+                val isUnderline = run.underline != UnderlinePatterns.NONE
+                val isStrike = run.isStrikeThrough || (rPr != null && (rPr.sizeOfStrikeArray() > 0 || rPr.sizeOfDstrikeArray() > 0))
                 val textDecoration = when {
-                    run.underline != UnderlinePatterns.NONE && run.isStrikeThrough -> 
-                        TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
-                    run.underline != UnderlinePatterns.NONE -> TextDecoration.Underline
-                    run.isStrikeThrough -> TextDecoration.LineThrough
+                    isUnderline && isStrike -> TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
+                    isUnderline -> TextDecoration.Underline
+                    isStrike -> TextDecoration.LineThrough
                     else -> TextDecoration.None
                 }
-                val fontSize = if (run.fontSize > 0) run.fontSize.sp else 14.sp
-                val textColor = parseHexColor(run.color) ?: Color.Black
-                
+
+                var resolvedSizeSp = 12
+                if (rPr != null) {
+                    if (isArabic && rPr.sizeOfSzCsArray() > 0) {
+                        val szCs = rPr.getSzCsArray(0).`val`?.toString()?.toIntOrNull()
+                        if (szCs != null && szCs > 0) resolvedSizeSp = szCs / 2
+                    } else if (rPr.sizeOfSzArray() > 0) {
+                        val sz = rPr.getSzArray(0).`val`?.toString()?.toIntOrNull()
+                        if (sz != null && sz > 0) resolvedSizeSp = sz / 2
+                    }
+                }
+                if (resolvedSizeSp == 12 && run.fontSize > 0) {
+                    resolvedSizeSp = run.fontSize
+                }
+                sizeFreq[resolvedSizeSp] = (sizeFreq[resolvedSizeSp] ?: 0) + 1
+                val fontSize = resolvedSizeSp.sp
+
+                val rawColorHex = try {
+                    if (rPr != null && rPr.sizeOfColorArray() > 0) {
+                        rPr.getColorArray(0).`val`?.toString()
+                    } else run.color
+                } catch (e: Exception) { run.color }
+                val textColor = parseHexColor(rawColorHex) ?: Color.Black
+
                 val highlightColor = try {
                     val hl = run.textHighlightColor?.toString()
-                    if (hl != null && hl != "none") {
-                        when(hl.lowercase()) {
-                            "yellow" -> Color(0xFFFEF08A)
-                            "green" -> Color(0xFFBBF7D0)
-                            "cyan" -> Color(0xFFA5F3FC)
-                            "magenta", "pink" -> Color(0xFFFBCFE8)
-                            "red" -> Color(0xFFFCA5A5)
-                            "blue" -> Color(0xFFBFDBFE)
-                            "darkyellow" -> Color(0xFFCA8A04)
-                            "darkgreen" -> Color(0xFF15803D)
-                            "darkcyan" -> Color(0xFF0E7490)
-                            "darkred" -> Color(0xFFB91C1C)
-                            "darkblue" -> Color(0xFF1D4ED8)
-                            "lightgray" -> Color(0xFFD1D5DB)
-                            "darkgray" -> Color(0xFF4B5563)
-                            "black" -> Color.Black
-                            else -> Color.Transparent
-                        }
-                    } else Color.Transparent
+                    if (hl != null && hl != "none") mapHighlightColor(hl) else Color.Transparent
                 } catch (e: Exception) { Color.Transparent }
 
                 val vertAlignStr = try { run.verticalAlignment?.toString()?.lowercase() ?: "" } catch (e: Exception) { "" }
@@ -250,6 +387,28 @@ object DocxEngine {
                     else -> BaselineShift.None
                 }
 
+                var fontName: String? = null
+                if (rPr != null && rPr.sizeOfRFontsArray() > 0) {
+                    val rFonts = rPr.getRFontsArray(0)
+                    if (isArabic) {
+                        fontName = rFonts.cs ?: rFonts.ascii ?: rFonts.hAnsi
+                    } else {
+                        fontName = rFonts.ascii ?: rFonts.hAnsi ?: rFonts.cs
+                    }
+                }
+                if (fontName.isNullOrBlank()) {
+                    fontName = try { run.fontFamily } catch (e: Exception) { null } ?: try { run.fontName } catch (e: Exception) { null }
+                }
+                if (fontName.isNullOrBlank() || fontName == "Null" || fontName == "null") {
+                    fontName = if (isArabic) "Cairo" else "Calibri"
+                }
+
+                fontFreq[fontName] = (fontFreq[fontName] ?: 0) + 1
+
+                val parsedFontFamily = com.example.presentation.editor.components.AppFonts.getFontFamily(fontName)
+
+                com.example.presentation.editor.font.FontEngine.ensureFontDownloaded(fontName)
+
                 builder.addStyle(
                     SpanStyle(
                         color = textColor,
@@ -257,6 +416,7 @@ object DocxEngine {
                         fontSize = fontSize,
                         fontWeight = fontWeight,
                         fontStyle = fontStyle,
+                        fontFamily = parsedFontFamily,
                         textDecoration = textDecoration,
                         baselineShift = baselineShift
                     ),
@@ -265,17 +425,122 @@ object DocxEngine {
                 )
             }
         }
-        flushText()
 
-        if (containsBreak) {
-            blocks.add(PageBreakBlock("brk_${UUID.randomUUID()}"))
-        }
+        flushText()
 
         return blocks
     }
 
+    private fun parseTable(
+        table: XWPFTable,
+        fontFreq: MutableMap<String, Int>,
+        sizeFreq: MutableMap<Int, Int>
+    ): TableBlock? {
+        val rows = table.rows.size
+        val cols = if (rows > 0) table.rows.maxOfOrNull { it.tableCells.size } ?: 0 else 0
+        if (rows == 0 || cols == 0) return null
+
+        val cells = mutableMapOf<String, TableCellModel>()
+        val isTableRtl = try { table.ctTbl?.tblPr?.bidiVisual != null } catch (e: Exception) { false }
+
+        for (r in 0 until rows) {
+            val row = table.getRow(r) ?: continue
+            val rowCells = row.tableCells
+            for (c in 0 until cols) {
+                val cell = if (c < rowCells.size) rowCells[c] else null
+                val cellTextBlocks = mutableListOf<TextBlock>()
+                var cellBgColor = Color.Transparent
+
+                if (cell != null) {
+                    val hexColor = try {
+                        cell.color ?: cell.ctTc?.tcPr?.shd?.fill?.toString()
+                    } catch (e: Exception) { cell.color }
+
+                    cellBgColor = parseHexColor(hexColor) ?: Color.Transparent
+
+                    for (cellPara in cell.paragraphs) {
+                        val paraBlocks = parseParagraph(cellPara, fontFreq, sizeFreq)
+                        cellTextBlocks.addAll(paraBlocks.filterIsInstance<TextBlock>())
+                    }
+                }
+
+                cells["${r}_${c}"] = TableCellModel(cellTextBlocks, cellBgColor, isTableRtl)
+            }
+        }
+
+        return TableBlock("tbl_${UUID.randomUUID()}", rows, cols, cells, isTableRtl)
+    }
+
+    private fun mapHighlightColor(hlName: String): Color {
+        return when (hlName.lowercase()) {
+            "yellow" -> Color(0xFFFEF08A)
+            "green" -> Color(0xFFBBF7D0)
+            "cyan" -> Color(0xFFA5F3FC)
+            "magenta", "pink" -> Color(0xFFFBCFE8)
+            "red" -> Color(0xFFFCA5A5)
+            "blue" -> Color(0xFFBFDBFE)
+            "darkyellow" -> Color(0xFFCA8A04)
+            "darkgreen" -> Color(0xFF15803D)
+            "darkcyan" -> Color(0xFF0E7490)
+            "darkred" -> Color(0xFFB91C1C)
+            "darkblue" -> Color(0xFF1D4ED8)
+            "lightgray" -> Color(0xFFD1D5DB)
+            "darkgray" -> Color(0xFF4B5563)
+            "black" -> Color.Black
+            else -> Color.Transparent
+        }
+    }
+
     fun exportDocx(state: EditorState, outputStream: OutputStream) {
         val document = XWPFDocument()
+
+        val sectPr = document.document.body.addNewSectPr()
+        val pageSz = sectPr.addNewPgSz()
+        
+        // POI uses twips (1/20th of a point). 72 points per inch.
+        // A4 = 11906 x 16838 twips
+        when (state.pageSize) {
+            PageSize.A3 -> { pageSz.w = 16838.toBigInteger(); pageSz.h = 23811.toBigInteger() }
+            PageSize.A4 -> { pageSz.w = 11906.toBigInteger(); pageSz.h = 16838.toBigInteger() }
+            PageSize.A5 -> { pageSz.w = 8391.toBigInteger(); pageSz.h = 11906.toBigInteger() }
+            PageSize.LETTER -> { pageSz.w = 12240.toBigInteger(); pageSz.h = 15840.toBigInteger() }
+            PageSize.LEGAL -> { pageSz.w = 12240.toBigInteger(); pageSz.h = 20160.toBigInteger() }
+        }
+        
+        if (state.pageOrientation == PageOrientation.LANDSCAPE) {
+            val temp = pageSz.w
+            pageSz.w = pageSz.h
+            pageSz.h = temp
+            pageSz.orient = org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation.LANDSCAPE
+        }
+        
+        val pageMar = sectPr.addNewPgMar()
+        when (state.pageMargin) {
+            PageMargin.NORMAL -> {
+                pageMar.top = 1440.toBigInteger()
+                pageMar.bottom = 1440.toBigInteger()
+                pageMar.left = 1440.toBigInteger()
+                pageMar.right = 1440.toBigInteger()
+            }
+            PageMargin.NARROW -> {
+                pageMar.top = 720.toBigInteger()
+                pageMar.bottom = 720.toBigInteger()
+                pageMar.left = 720.toBigInteger()
+                pageMar.right = 720.toBigInteger()
+            }
+            PageMargin.MODERATE -> {
+                pageMar.top = 1440.toBigInteger()
+                pageMar.bottom = 1440.toBigInteger()
+                pageMar.left = 1080.toBigInteger()
+                pageMar.right = 1080.toBigInteger()
+            }
+            PageMargin.WIDE -> {
+                pageMar.top = 1440.toBigInteger()
+                pageMar.bottom = 1440.toBigInteger()
+                pageMar.left = 2880.toBigInteger()
+                pageMar.right = 2880.toBigInteger()
+            }
+        }
 
         if (state.headerText.text.isNotEmpty() || state.watermarkText.isNotEmpty()) {
             try {
@@ -372,8 +637,20 @@ object DocxEngine {
                 }
                 is ImageBlock -> {
                     val p = document.createParagraph()
+                    p.alignment = ParagraphAlignment.CENTER
                     val run = p.createRun()
-                    run.setText("[Image: ${block.uri.ifEmpty { "Embedded Illustration" }}]")
+                    if (block.imageData != null && block.imageData.isNotEmpty()) {
+                        try {
+                            val bais = java.io.ByteArrayInputStream(block.imageData)
+                            val widthEmu = org.apache.poi.util.Units.toEMU(300.0)
+                            val heightEmu = org.apache.poi.util.Units.toEMU(200.0)
+                            run.addPicture(bais, Document.PICTURE_TYPE_PNG, "image_${block.id}.png", widthEmu, heightEmu)
+                        } catch (e: Exception) {
+                            run.setText("[Image: ${block.uri.ifEmpty { "Embedded Image" }}]")
+                        }
+                    } else {
+                        run.setText("[Image: ${block.uri.ifEmpty { "Embedded Image" }}]")
+                    }
                 }
                 is ShapeBlock -> {
                     val p = document.createParagraph()
@@ -458,7 +735,8 @@ object DocxEngine {
         while (currentIndex < annotatedString.text.length) {
             val run = paragraph.createRun()
             
-            run.fontFamily = state.fontFamily
+            var runFontName = state.fontFamily
+            run.fontFamily = runFontName
             run.fontSize = state.fontSize
 
             val spanStyles = annotatedString.spanStyles.filter {
@@ -479,6 +757,10 @@ object DocxEngine {
                 val style = span.item
                 if (style.fontWeight == FontWeight.Bold) run.isBold = true
                 if (style.fontStyle == FontStyle.Italic) run.isItalic = true
+                if (style.fontFamily != null) {
+                    runFontName = style.fontFamily.toString()
+                    run.fontFamily = runFontName
+                }
                 if (style.textDecoration == TextDecoration.Underline || style.textDecoration == TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))) {
                     run.underline = UnderlinePatterns.SINGLE
                 }
@@ -499,14 +781,19 @@ object DocxEngine {
                 }
             }
 
-            // Set Run Level RTL tag if needed
-            if (block.isRtl || state.isRtl) {
-                try {
-                    val ctr = run.ctr
-                    val rpr = if (ctr.isSetRPr) ctr.rPr else ctr.addNewRPr()
-                    rpr.addNewRtl() // Add RTL to the run properties
-                } catch (e: Exception) {}
-            }
+            // WordprocessingML Font XML attributes for Arabic (Complex Script) & English
+            try {
+                val ctr = run.ctr
+                val rPr = if (ctr.isSetRPr) ctr.rPr else ctr.addNewRPr()
+                val rFonts = rPr.addNewRFonts()
+                rFonts.ascii = runFontName
+                rFonts.hAnsi = runFontName
+                rFonts.cs = runFontName
+                rFonts.eastAsia = runFontName
+                if (block.isRtl || state.isRtl) {
+                    rPr.addNewRtl()
+                }
+            } catch (e: Exception) {}
 
             val segmentText = annotatedString.text.substring(currentIndex, nextChangeIndex)
             run.setText(segmentText)

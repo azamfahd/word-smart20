@@ -2,12 +2,19 @@ package com.example
 
 import android.app.Application
 import android.util.Log
+import com.example.presentation.editor.font.FontEngine
 import com.google.firebase.FirebaseApp
 
 class WordEditorApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         
+        try {
+            FontEngine.initialize(this)
+        } catch (e: Exception) {
+            Log.e("FontEngineInit", "FontEngine initialization error", e)
+        }
+
         try {
             val apps = FirebaseApp.getApps(this)
             if (apps.isEmpty()) {

@@ -62,12 +62,7 @@ fun createSafeTextStyle(
     textAlign: TextAlign = TextAlign.Unspecified,
     isRtl: Boolean = true
 ): TextStyle {
-    val family = when (fontFamilyStr.lowercase()) {
-        "times new roman", "georgia", "garamond", "cambria", "book antiqua", "palatino linotype", "aptos serif" -> FontFamily.Serif
-        "courier new", "consolas", "lucida console" -> FontFamily.Monospace
-        "comic sans ms" -> FontFamily.Cursive
-        else -> FontFamily.SansSerif
-    }
+    val family = AppFonts.getFontFamily(fontFamilyStr)
     val safeLineSpacing = lineSpacingFactor.coerceAtLeast(1.0f)
     return TextStyle(
         fontSize = fontSizeSp.sp,
@@ -260,6 +255,11 @@ fun DocumentCanvas(
         }
     }
 
+    LaunchedEffect(state.viewMode) {
+        offsetX = 0f
+        offsetY = 0f
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
@@ -354,8 +354,11 @@ fun DocumentCanvas(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer(
+                            scaleX = effectiveScale,
+                            scaleY = effectiveScale,
                             translationX = offsetX,
-                            translationY = offsetY
+                            translationY = offsetY,
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
                         ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     contentPadding = PaddingValues(vertical = 16.dp, horizontal = 16.dp)
@@ -764,23 +767,30 @@ fun RenderDocumentBlock(
                                             .fillMaxHeight()
                                             .border(0.5.dp, Color.Black)
                                             .background(cellModel?.backgroundColor ?: Color.Transparent)
-                                            .padding(8.dp),
+                                            .padding(6.dp),
                                         contentAlignment = Alignment.TopStart
                                     ) {
-                                        Column(modifier = Modifier.fillMaxWidth()) {
-                                            if (cellModel != null && cellModel.textBlocks.isNotEmpty()) {
-                                                cellModel.textBlocks.forEach { tb ->
-                                                    RenderDocumentBlock(tb, state, onEvent)
+                                        val cellText = cellModel?.textBlocks?.firstOrNull()?.text ?: TextFieldValue("")
+                                        BasicTextField(
+                                            value = cellText,
+                                            onValueChange = { newText ->
+                                                if (!state.isProtectedView) {
+                                                    onEvent(RibbonEvent.OnTableCellChanged(block.id, cellId, newText))
                                                 }
-                                            } else {
-                                                BasicTextField(
-                                                    value = TextFieldValue(""),
-                                                    onValueChange = {},
-                                                    readOnly = state.isProtectedView,
-                                                    modifier = Modifier.fillMaxWidth()
-                                                )
-                                            }
-                                        }
+                                            },
+                                            readOnly = state.isProtectedView,
+                                            modifier = Modifier.fillMaxWidth(),
+                                            textStyle = createSafeTextStyle(
+                                                fontSizeSp = (state.fontSize - 2).coerceAtLeast(9),
+                                                fontFamilyStr = state.fontFamily,
+                                                lineSpacingFactor = 1.0f,
+                                                isBold = r == 0,
+                                                isItalic = false,
+                                                textColor = state.textColor,
+                                                textAlign = TextAlign.Start,
+                                                isRtl = state.isRtl || block.isRtl
+                                            )
+                                        )
                                     }
                                 }
                             }

@@ -1,0 +1,5 @@
+# QA Audit Progress
+- Undo/Redo logic verified. It uses a bounded stack of states. Works efficiently since Kotlin data class copy creates shallow copies of unchanged immutable objects. No memory leaks.
+- PDF Exporter: Completely rewritten. Now supports real word wrapping using StaticLayout (prevents text cutoff/clipping), honors exact page sizes (A4, A5, Letter, Legal) and orientation (Portrait/Landscape), and properly implements exact user-defined margins (Normal, Narrow, Wide). Multi-line tables and RTL text alignment fully supported.
+- DOCX Engine: Missing margin and orientation properties in POI output.
+- Search & Replace: UI missing.
