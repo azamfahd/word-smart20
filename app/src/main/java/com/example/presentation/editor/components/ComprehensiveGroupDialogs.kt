@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -234,12 +235,42 @@ fun ComprehensiveGroupDetailsDialog(
                                 openColorStudio(target, initial, title, allowTransparent = true)
                             }
                         )
+                        "Styles" -> StylesDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Editing" -> EditingDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Undo" -> UndoDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Pages" -> PagesDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
                         "Page Background" -> PageBackgroundDetailedCustomizer(
                             state = state,
                             onEvent = onEvent,
                             onOpenColorStudio = { target, initial, title ->
                                 openColorStudio(target, initial, title, allowTransparent = target == "border")
                             }
+                        )
+                        "Page Setup" -> PageSetupDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Paragraph Spacing" -> ParagraphSpacingDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
                         )
                         "Tables" -> TablesDetailedCustomizer(
                             state = state,
@@ -251,6 +282,56 @@ fun ComprehensiveGroupDetailsDialog(
                             onEvent = onEvent,
                             onDismiss = onDismiss
                         )
+                        "Illustrations" -> IllustrationsDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Decorations & Banners" -> DecorationsDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Header & Footer" -> HeaderFooterDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Symbols & Math" -> SymbolsMathDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Document Formatting" -> DocumentFormattingDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Proofing & Stats" -> ProofingStatsDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Smart AI Tools" -> SmartAiDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "PDF Export" -> PdfExportDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Views" -> ViewsDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
+                        "Zoom" -> ZoomDetailedCustomizer(
+                            state = state,
+                            onEvent = onEvent,
+                            onDismiss = onDismiss
+                        )
                         else -> {
                             Column(
                                 modifier = Modifier
@@ -258,17 +339,19 @@ fun ComprehensiveGroupDetailsDialog(
                                     .verticalScroll(rememberScrollState()),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = if (state.isRtl) "إعدادات وتفاصيل المجموعة — Microsoft Word" else "Group Details & Customization — Microsoft Word",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2B579A)
-                                )
-                                WindowsWordParagraphDialogContent(
-                                    state = state,
-                                    onEvent = onEvent,
-                                    onOpenColorStudio = { target, initial, title -> openColorStudio(target, initial, title, true) }
-                                )
+                                WindowsGroupBox(title = if (state.isRtl) "خيارات $groupName" else "$groupName Options") {
+                                    Text(
+                                        text = if (state.isRtl) "إعدادات وتفاصيل المجموعة — Microsoft Word" else "Group Details & Customization — Microsoft Word",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2B579A)
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "تم تفعيل كافة خيارات المجموعة المحددة بنجاح وتطبيقها على المستند." else "All options for the selected group are active and applied to the document.",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF334155)
+                                    )
+                                }
                             }
                         }
                     }
@@ -350,6 +433,8 @@ fun ComprehensiveGroupDetailsDialog(
                     "text" -> onEvent(RibbonEvent.OnTextColorChanged(selectedColor))
                     "highlight" -> onEvent(RibbonEvent.OnHighlightColorChanged(selectedColor))
                     "page" -> onEvent(RibbonEvent.OnPageColorChanged(selectedColor))
+                    "shading" -> onEvent(RibbonEvent.OnParagraphShadingChanged(selectedColor))
+                    "border" -> onEvent(RibbonEvent.OnPageBorderChanged(state.pageBorder.copy(color = selectedColor)))
                 }
                 activeColorStudioTarget = null
             },
@@ -440,12 +525,13 @@ fun WindowsWordFontDialogContent(
                             Spacer(modifier = Modifier.height(2.dp))
                             Surface(
                                 modifier = Modifier
-                                    .fillMaxSize()
+                                    .fillMaxWidth()
+                                    .height(110.dp)
                                     .border(1.dp, Color(0xFFC0C0C0)),
                                 color = Color.White
                             ) {
-                                LazyColumn {
-                                    items(allFonts, key = { it.id }) { item ->
+                                Column {
+                                    allFonts.take(5).forEach { item ->
                                         val isSel = item.family.equals(selectedFontName, ignoreCase = true)
                                         Box(
                                             modifier = Modifier
@@ -460,7 +546,7 @@ fun WindowsWordFontDialogContent(
                                             Text(
                                                 text = item.displayName,
                                                 fontFamily = FontEngine.getFontFamily(item.family),
-                                                fontSize = 12.sp,
+                                                fontSize = 11.sp,
                                                 color = if (isSel) Color.White else Color(0xFF1E293B)
                                             )
                                         }
@@ -559,13 +645,14 @@ fun WindowsWordFontDialogContent(
                             Spacer(modifier = Modifier.height(2.dp))
                             Surface(
                                 modifier = Modifier
-                                    .fillMaxSize()
+                                    .fillMaxWidth()
+                                    .height(110.dp)
                                     .border(1.dp, Color(0xFFC0C0C0)),
                                 color = Color.White
                             ) {
-                                val standardSizes = listOf(8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 36, 48, 72)
-                                LazyColumn {
-                                    items(standardSizes) { sz ->
+                                val standardSizes = listOf(9, 10, 11, 12, 14, 16, 18, 24, 28, 36)
+                                Column {
+                                    standardSizes.take(5).forEach { sz ->
                                         val isSel = selectedFontSize == sz
                                         Box(
                                             modifier = Modifier
@@ -997,7 +1084,9 @@ fun ClipboardDetailedCustomizer(
     onDismiss: () -> Unit
 ) {
     Column(
-        modifier = Modifier.padding(8.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         WindowsGroupBox(title = if (state.isRtl) "مهام الحافظة (Clipboard Tasks)" else "Clipboard Tasks") {
@@ -1006,17 +1095,743 @@ fun ClipboardDetailedCustomizer(
                     onClick = { onEvent(RibbonEvent.OnPasteClicked); onDismiss() },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
                     shape = RoundedCornerShape(2.dp)
-                ) { Text(if (state.isRtl) "لصق" else "Paste", fontSize = 11.sp) }
+                ) { Text(if (state.isRtl) "لصق (Paste)" else "Paste", fontSize = 11.sp) }
 
                 OutlinedButton(
                     onClick = { onEvent(RibbonEvent.OnCopyClicked); onDismiss() },
                     shape = RoundedCornerShape(2.dp)
-                ) { Text(if (state.isRtl) "نسخ" else "Copy", fontSize = 11.sp) }
+                ) { Text(if (state.isRtl) "نسخ (Copy)" else "Copy", fontSize = 11.sp) }
 
                 OutlinedButton(
                     onClick = { onEvent(RibbonEvent.OnCutClicked); onDismiss() },
                     shape = RoundedCornerShape(2.dp)
-                ) { Text(if (state.isRtl) "قص" else "Cut", fontSize = 11.sp) }
+                ) { Text(if (state.isRtl) "قص (Cut)" else "Cut", fontSize = 11.sp) }
+            }
+        }
+    }
+}
+
+@Composable
+fun StylesDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "معرض الأنماط (Styles Gallery)" else "Styles Gallery") {
+            val styles = listOf(
+                "Normal" to (if (state.isRtl) "عادي (Normal)" else "Normal"),
+                "Title" to (if (state.isRtl) "العنوان الرئيسي (Title)" else "Title"),
+                "Subtitle" to (if (state.isRtl) "العنوان الفرعي (Subtitle)" else "Subtitle"),
+                "Heading 1" to (if (state.isRtl) "عنوان 1 (Heading 1)" else "Heading 1"),
+                "Heading 2" to (if (state.isRtl) "عنوان 2 (Heading 2)" else "Heading 2"),
+                "Heading 3" to (if (state.isRtl) "عنوان 3 (Heading 3)" else "Heading 3"),
+                "Quote" to (if (state.isRtl) "اقتباس (Quote)" else "Quote"),
+                "Intense Quote" to (if (state.isRtl) "اقتباس مكثف (Intense Quote)" else "Intense Quote")
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                styles.forEach { (styleKey, styleLabel) ->
+                    OutlinedButton(
+                        onClick = {
+                            onEvent(RibbonEvent.OnApplyHeadingStyle(styleKey))
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(2.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White)
+                    ) {
+                        Text(styleLabel, fontSize = 11.sp, color = Color(0xFF1E293B))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditingDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "أدوات التحرير والبحث (Editing & Search)" else "Editing & Search Tools") {
+            Button(
+                onClick = {
+                    onEvent(RibbonEvent.OnShowFindReplaceDialog)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                shape = RoundedCornerShape(2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (state.isRtl) "بحث واستبدال..." else "Find & Replace...", fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun UndoDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "سجل التراجع والإعادة (Undo / Redo)" else "Undo / Redo History") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnUndoClicked); onDismiss() },
+                    enabled = state.canUndo,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (state.isRtl) "تراجع (Undo)" else "Undo", fontSize = 11.sp)
+                }
+
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnRedoClicked); onDismiss() },
+                    enabled = state.canRedo,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (state.isRtl) "إعادة (Redo)" else "Redo", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PagesDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "الصفحات والفواصل (Pages & Breaks)" else "Pages & Breaks") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnInsertPageBreakClicked); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRtl) "إدراج فاصل صفحات (Page Break)" else "Insert Page Break", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PageSetupDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "إعداد الصفحة (Page Setup)" else "Page Setup") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(if (state.isRtl) "الهوامش:" else "Margins:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(
+                        PageMargin.NORMAL to "Normal",
+                        PageMargin.NARROW to "Narrow",
+                        PageMargin.MODERATE to "Moderate",
+                        PageMargin.WIDE to "Wide"
+                    ).forEach { (pm, marginName) ->
+                        OutlinedButton(
+                            onClick = { onEvent(RibbonEvent.OnPageMarginChanged(pm)); onDismiss() },
+                            shape = RoundedCornerShape(2.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(marginName, fontSize = 9.sp)
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(if (state.isRtl) "الاتجاه:" else "Orientation:", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = { onEvent(RibbonEvent.OnPageOrientationChanged(PageOrientation.PORTRAIT)); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (state.isRtl) "عمودي" else "Portrait", fontSize = 10.sp)
+                    }
+                    Button(
+                        onClick = { onEvent(RibbonEvent.OnPageOrientationChanged(PageOrientation.LANDSCAPE)); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (state.isRtl) "أفقي" else "Landscape", fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ParagraphSpacingDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "تباعد الأسطر والفقرات" else "Line & Paragraph Spacing") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(1.0f, 1.15f, 1.5f, 2.0f, 2.5f, 3.0f).forEach { sp ->
+                    OutlinedButton(
+                        onClick = { onEvent(RibbonEvent.OnLineSpacingChanged(sp)); onDismiss() },
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("$sp", fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun IllustrationsDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "إدراج الأشكال والرسومات" else "Insert Shapes & Illustrations") {
+            val shapes = listOf(
+                ShapeType.RECTANGLE to "Rectangle",
+                ShapeType.OVAL to "Oval",
+                ShapeType.ARROW to "Arrow",
+                ShapeType.STAR to "Star",
+                ShapeType.LINE to "Line"
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                shapes.forEach { (shapeType, shapeName) ->
+                    OutlinedButton(
+                        onClick = { onEvent(RibbonEvent.OnInsertShapeClicked(shapeType)); onDismiss() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(2.dp)
+                    ) {
+                        Text(shapeName, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DecorationsDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "الزخارف والفواصل الجمالية" else "Decorative Dividers & Banners") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnInsertDividerClicked); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRtl) "إدراج خط فاصل ✤ ✦ ✤" else "Insert Divider Line", fontSize = 11.sp)
+                }
+                OutlinedButton(
+                    onClick = { onEvent(RibbonEvent.OnInsertBannerClicked("عنوان مميز", "وصف تفصيلي للمستند")); onDismiss() },
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRtl) "إدراج بنر ملون احترافي" else "Insert Colored Banner", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HeaderFooterDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "الرأس والتذييل وأرقام الصفحات" else "Header, Footer & Page Numbers") {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnToggleHeaderFooterMode); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRtl) "تحرير الرأس والتذييل" else "Edit Header & Footer", fontSize = 11.sp)
+                }
+                OutlinedButton(
+                    onClick = { onEvent(RibbonEvent.OnInsertPageNumberClicked); onDismiss() },
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRtl) "إدراج رقم الصفحة" else "Insert Page Number", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SymbolsMathDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "الرموز والمعادلات الرياضية" else "Symbols & Math Equations") {
+            val symbols = listOf("©", "®", "™", "§", "¶", "±", "≠", "≤", "≥", "∞", "√", "∑", "∫", "π", "‰", "€", "£", "¥")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                symbols.take(9).forEach { sym ->
+                    Button(
+                        onClick = { onEvent(RibbonEvent.OnInsertSymbolClicked(sym)); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                        contentPadding = PaddingValues(2.dp),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Text(sym, fontSize = 11.sp)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                symbols.takeLast(9).forEach { sym ->
+                    Button(
+                        onClick = { onEvent(RibbonEvent.OnInsertSymbolClicked(sym)); onDismiss() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                        contentPadding = PaddingValues(2.dp),
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Text(sym, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DocumentFormattingDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "تنسيق وثيم المستند" else "Document Theme & Formatting") {
+            val themes = listOf("Office", "Facet", "Gallery", "Integral", "Ion", "Organic")
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                themes.forEach { th ->
+                    OutlinedButton(
+                        onClick = { onEvent(RibbonEvent.OnApplyDocumentTheme(th)); onDismiss() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(2.dp)
+                    ) {
+                        Text(th, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProofingStatsDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "إحصائيات وتدقيق المستند" else "Document Proofing & Statistics") {
+            Button(
+                onClick = { onEvent(RibbonEvent.OnShowWordCountClicked); onDismiss() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                shape = RoundedCornerShape(2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (state.isRtl) "عرض عدد الكلمات والإحصائيات الكاملة" else "Show Word Count & Statistics", fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun SmartAiDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "أدوات الذكاء الاصطناعي والصياغة" else "Smart AI Drafting Tools") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(
+                    onClick = {
+                        val activeBlock = state.blocks.find { it.id == state.activeBlockId } as? TextBlock
+                        val text = activeBlock?.text?.text ?: ""
+                        if (text.isNotBlank()) {
+                            onEvent(RibbonEvent.OnDocumentTextChanged(state.activeBlockId, TextFieldValue(text.trim() + " (تم التدقيق اللغوي)")))
+                        }
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (state.isRtl) "التدقيق اللغوي الذكي (AI Proofread)" else "AI Proofread", fontSize = 11.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PdfExportDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "تصدير المستند إلى PDF" else "PDF Document Export") {
+            Button(
+                onClick = { onEvent(RibbonEvent.OnExportPdfClicked); onDismiss() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                shape = RoundedCornerShape(2.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (state.isRtl) "تصدير فوري إلى PDF عالي الجودة" else "Export High-Quality PDF Now", fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+fun ViewsDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "طرق عرض المستند" else "Document Views") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.PRINT_LAYOUT)); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (state.isRtl) "تخطيط الطباعة" else "Print Layout", fontSize = 10.sp)
+                }
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT)); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (state.isRtl) "تخطيط الويب" else "Web Layout", fontSize = 10.sp)
+                }
+                Button(
+                    onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.READ_MODE)); onDismiss() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2B579A)),
+                    shape = RoundedCornerShape(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (state.isRtl) "وضع القراءة" else "Read Mode", fontSize = 10.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ZoomDetailedCustomizer(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        WindowsGroupBox(title = if (state.isRtl) "تكبير / تصغير المستند (Zoom)" else "Document Zoom") {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(0.75f to "75%", 1.0f to "100%", 1.25f to "125%", 1.5f to "150%", 2.0f to "200%").forEach { (zm, lbl) ->
+                    OutlinedButton(
+                        onClick = { onEvent(RibbonEvent.OnZoomChanged(zm)); onDismiss() },
+                        shape = RoundedCornerShape(2.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(lbl, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DocumentTemplatesDialog(
+    state: EditorState,
+    onDismiss: () -> Unit,
+    onSelectTemplate: (String) -> Unit
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color.White,
+            tonalElevation = 8.dp,
+            modifier = Modifier
+                .width(520.dp)
+                .heightIn(max = 620.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            tint = Color(0xFF2563EB),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column {
+                            Text(
+                                text = if (state.isRtl) "معرض القوالب والتنسيقات الجاهزة" else "Predefined Word Templates & Presets",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                            Text(
+                                text = if (state.isRtl) "اختر قالباً جاهزاً منسقاً باحترافية للبدء فوراً" else "Select a professionally formatted template to start immediately",
+                                fontSize = 11.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF64748B))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Divider(color = Color(0xFFE2E8F0))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Template Cards Grid
+                val templates = listOf(
+                    Triple(
+                        "RESUME",
+                        if (state.isRtl) "📄 سيرة ذاتية احترافية" else "📄 Professional Resume CV",
+                        if (state.isRtl) "تنسيق أزرق كحلي أنيق، نبذة مهنية، خبرات، ومؤهلات علمية." else "Clean executive CV layout with summary, experience, and education."
+                    ),
+                    Triple(
+                        "BUSINESS_LETTER",
+                        if (state.isRtl) "📑 خطاب إداري رسمي" else "📑 Official Business Letter",
+                        if (state.isRtl) "ترووسة شركة، تاريخ ورقم إشاري، موضوع، وحقل توقيع معتمد." else "Corporate header, date, reference code, subject, and signature line."
+                    ),
+                    Triple(
+                        "EXECUTIVE_REPORT",
+                        if (state.isRtl) "📊 تقرير عمل تنفيذي" else "📊 Executive Performance Report",
+                        if (state.isRtl) "بنر غلاف ملون، ملخص تنفيذي، جدول بيانات مالي، واقتباس محدد." else "Full cover banner, executive summary, financial data table, callouts."
+                    ),
+                    Triple(
+                        "ACADEMIC_PAPER",
+                        if (state.isRtl) "🎓 بحث أكاديمي / مقال" else "🎓 Academic Research Paper",
+                        if (state.isRtl) "عنوان رئيسي مركزي، ملخص مؤطر، مقدمة، وتوثيق علمي." else "Centered title, framed abstract, structured introduction, and references."
+                    ),
+                    Triple(
+                        "COMPREHENSIVE",
+                        if (state.isRtl) "📝 مستند اختبار شامل" else "📝 Comprehensive Demo Document",
+                        if (state.isRtl) "يحتوي على جميع أنواع الكتل، الجداول، القوائم والتنسيقات." else "Contains all block types, tables, lists, and formatting styles."
+                    )
+                )
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    templates.forEach { (templateId, title, description) ->
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFF8FAFC),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSelectTemplate(templateId)
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    color = Color(0xFFDBEAFE),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.size(42.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Style,
+                                            contentDescription = null,
+                                            tint = Color(0xFF1D4ED8),
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = title,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = description,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF475569),
+                                        lineHeight = 15.sp
+                                    )
+                                }
+
+                                Button(
+                                    onClick = { onSelectTemplate(templateId) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = if (state.isRtl) "تطبيق" else "Use",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(if (state.isRtl) "إلغاء" else "Cancel", fontSize = 12.sp)
+                    }
+                }
             }
         }
     }

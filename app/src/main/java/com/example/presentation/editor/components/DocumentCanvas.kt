@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -60,6 +61,8 @@ fun createSafeTextStyle(
     isItalic: Boolean = false,
     textColor: Color = Color.Unspecified,
     textAlign: TextAlign = TextAlign.Unspecified,
+    textDecoration: TextDecoration? = null,
+    background: Color = Color.Unspecified,
     isRtl: Boolean = true
 ): TextStyle {
     val family = AppFonts.getFontFamily(fontFamilyStr)
@@ -71,6 +74,8 @@ fun createSafeTextStyle(
         fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
         color = textColor,
         textAlign = textAlign,
+        textDecoration = textDecoration,
+        background = background,
         lineHeight = safeLineSpacing.em,
         lineHeightStyle = LineHeightStyle(
             alignment = LineHeightStyle.Alignment.Center,
@@ -310,7 +315,7 @@ fun DocumentCanvas(
         val scaledHeight = targetHeight * effectiveScale
 
         when (state.viewMode) {
-            ViewMode.PRINT_LAYOUT -> {
+            ViewMode.PRINT_LAYOUT, ViewMode.READ_MODE -> {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -340,7 +345,7 @@ fun DocumentCanvas(
                             )
                         }
 
-                        // Realistic gray gap between sequential A4 sheets
+                        // Realistic gap between sequential A4 sheets
                         if (pageIndex < pages.size - 1) {
                             Spacer(modifier = Modifier.height(20.dp))
                         }
@@ -384,54 +389,7 @@ fun DocumentCanvas(
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            ViewMode.READ_MODE -> {
-                // Distraction-free Reading view (Windows Word Reading View)
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer(
-                            translationX = offsetX,
-                            translationY = offsetY
-                        ),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    contentPadding = PaddingValues(vertical = 24.dp, horizontal = 20.dp)
-                ) {
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .widthIn(max = 760.dp)
-                                .fillMaxWidth()
-                                .shadow(8.dp, RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDF9))
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 40.dp, vertical = 36.dp),
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Text(
-                                    text = state.documentTitle,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E293B),
-                                    textAlign = if (state.isRtl) TextAlign.Right else TextAlign.Left,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Divider(color = Color(0xFFE2E8F0), thickness = 1.dp)
-
-                                state.blocks.forEach { block ->
-                                    if (block !is PageBreakBlock) {
-                                        RenderDocumentBlock(block = block, state = state, onEvent = onEvent)
-                                    }
-                                }
-                            }
+                            InkCanvasOverlay(state = state, pageIndex = 0, onEvent = onEvent)
                         }
                     }
                 }
@@ -633,18 +591,64 @@ fun A4PageCard(
                                 detectTapGestures(onDoubleTap = { onEvent(RibbonEvent.OnToggleHeaderFooterMode) })
                             }
                         }
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        ) {
+                            if (!state.isEditingHeaderFooter && !state.isProtectedView) {
+                                val lastBlock = pageBlocks.lastOrNull()
+                                if (lastBlock != null) {
+                                    onEvent(RibbonEvent.OnBlockFocusChanged(lastBlock.id))
+                                } else {
+                                    onEvent(RibbonEvent.OnAddParagraphAfter(state.activeBlockId))
+                                }
+                            }
+                        }
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         if (pageBlocks.isEmpty()) {
-                            // Empty page placeholder
+                            // Empty page placeholder with interactive input
+                            val emptyText = remember { mutableStateOf(TextFieldValue("")) }
                             BasicTextField(
-                                value = "",
-                                onValueChange = {},
+                                value = emptyText.value,
+                                onValueChange = { newT ->
+                                    emptyText.value = newT
+                                    if (newT.text.isNotEmpty() && !state.isProtectedView) {
+                                        onEvent(RibbonEvent.OnAddParagraphAfter(state.activeBlockId))
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
-                                textStyle = TextStyle(fontSize = state.fontSize.sp)
+                                textStyle = createSafeTextStyle(
+                                    fontSizeSp = state.fontSize,
+                                    fontFamilyStr = state.fontFamily,
+                                    lineSpacingFactor = state.lineSpacing,
+                                    isBold = state.isBold,
+                                    isItalic = state.isItalic,
+                                    textColor = state.textColor,
+                                    textAlign = when (state.alignment) {
+                                        TextAlignment.LEFT -> if (state.isRtl) TextAlign.Right else TextAlign.Left
+                                        TextAlignment.CENTER -> TextAlign.Center
+                                        TextAlignment.RIGHT -> TextAlign.Right
+                                        TextAlignment.JUSTIFY -> TextAlign.Justify
+                                    },
+                                    isRtl = state.isRtl
+                                ),
+                                decorationBox = { inner ->
+                                    Box(modifier = Modifier.fillMaxWidth()) {
+                                        if (emptyText.value.text.isEmpty()) {
+                                            Text(
+                                                text = if (state.isRtl) "انقر واكتب هنا..." else "Click and type here...",
+                                                color = Color(0xFFAAAAAA),
+                                                fontSize = state.fontSize.sp,
+                                                fontFamily = AppFonts.getFontFamily(state.fontFamily)
+                                            )
+                                        }
+                                        inner()
+                                    }
+                                }
                             )
                         } else {
                             pageBlocks.forEach { block ->
@@ -670,6 +674,8 @@ fun A4PageCard(
                     onDoubleTap = { onEvent(RibbonEvent.OnToggleHeaderFooterMode) }
                 )
             }
+            // Ink Drawing Overlay
+            InkCanvasOverlay(state = state, pageIndex = pageNumber - 1, onEvent = onEvent)
         }
     }
 }
@@ -683,13 +689,25 @@ fun RenderDocumentBlock(
     when (block) {
         is TextBlock -> {
             val isFocused = state.activeBlockId == block.id
-            
-            // Use block's alignment, fallback to state if we are currently editing it and it matches? No, prefer block's alignment.
-            // Wait, if we want ribbon buttons to work on the currently focused block, we need the UI to reflect it. But for now, we just want it to render correctly from DOCX.
-            // A good compromise: If it's focused, use the state (so Ribbon works). If not focused, use the block's inherent properties!
             val currentAlign = if (isFocused) state.alignment else block.alignment
             val currentLineSpacing = if (isFocused) state.lineSpacing else block.lineSpacing
             val currentIsRtl = if (isFocused) state.isTextRtl || state.isRtl else block.isRtl
+            val currentIndentLevel = if (isFocused) state.indentLevel else block.indentLevel
+            val currentShadingBg = if (isFocused) state.paragraphShadingColor else block.paragraphShadingColor
+            val currentBorderType = if (isFocused) state.paragraphBorder else block.paragraphBorder
+            val currentIsBulletedList = if (isFocused) state.isBulletedList else block.isBulletedList
+            val currentBulletShape = if (isFocused) state.bulletShape else block.bulletShape
+            val currentIsNumberedList = if (isFocused) state.isNumberedList else block.isNumberedList
+            val currentNumberingStyle = if (isFocused) state.numberingStyle else block.numberingStyle
+
+            val currentFontSize = if (isFocused) state.fontSize else block.fontSize
+            val currentFontFamily = if (isFocused) state.fontFamily else block.fontFamily
+            val currentIsBold = if (isFocused) state.isBold else block.isBold
+            val currentIsItalic = if (isFocused) state.isItalic else block.isItalic
+            val currentIsUnderline = if (isFocused) state.isUnderline else block.isUnderline
+            val currentIsStrikethrough = if (isFocused) state.isStrikethrough else block.isStrikethrough
+            val currentTextColor = if (isFocused) state.textColor else block.textColor
+            val currentHighlightColor = if (isFocused) state.highlightColor else block.highlightColor
 
             val alignment = when (currentAlign) {
                 TextAlignment.LEFT -> if (currentIsRtl) TextAlign.Right else TextAlign.Left
@@ -698,45 +716,161 @@ fun RenderDocumentBlock(
                 TextAlignment.JUSTIFY -> TextAlign.Justify
             }
 
-            BasicTextField(
-                value = block.text,
-                onValueChange = { newText ->
-                    if (!state.isProtectedView) {
-                        onEvent(RibbonEvent.OnDocumentTextChanged(block.id, newText))
+            val textDecoration = if (currentIsUnderline && currentIsStrikethrough) {
+                TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))
+            } else if (currentIsUnderline) {
+                TextDecoration.Underline
+            } else if (currentIsStrikethrough) {
+                TextDecoration.LineThrough
+            } else null
+
+            val indentPadding = if (currentIndentLevel > 0) {
+                (currentIndentLevel * 24).dp
+            } else 0.dp
+
+            val shadingBg = currentShadingBg ?: Color.Transparent
+
+            val borderModifier = if (currentBorderType != ParagraphBorder.NONE) {
+                when (currentBorderType) {
+                    ParagraphBorder.ALL, ParagraphBorder.OUTSIDE -> Modifier.border(1.dp, Color(0xFF475569), RoundedCornerShape(2.dp))
+                    ParagraphBorder.BOTTOM -> Modifier.drawBehind { drawLine(Color(0xFF475569), start = androidx.compose.ui.geometry.Offset(0f, size.height), end = androidx.compose.ui.geometry.Offset(size.width, size.height), strokeWidth = 2f) }
+                    ParagraphBorder.TOP -> Modifier.drawBehind { drawLine(Color(0xFF475569), start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(size.width, 0f), strokeWidth = 2f) }
+                    ParagraphBorder.LEFT -> Modifier.drawBehind { drawLine(Color(0xFF475569), start = androidx.compose.ui.geometry.Offset(0f, 0f), end = androidx.compose.ui.geometry.Offset(0f, size.height), strokeWidth = 2f) }
+                    ParagraphBorder.RIGHT -> Modifier.drawBehind { drawLine(Color(0xFF475569), start = androidx.compose.ui.geometry.Offset(size.width, 0f), end = androidx.compose.ui.geometry.Offset(size.width, size.height), strokeWidth = 2f) }
+                    else -> Modifier
+                }
+            } else Modifier
+
+            val bulletPrefix = if (currentIsBulletedList) {
+                when (currentBulletShape) {
+                    BulletShape.DISC -> "• "
+                    BulletShape.CIRCLE -> "○ "
+                    BulletShape.SQUARE -> "■ "
+                    BulletShape.HOLLOW_SQUARE -> "□ "
+                    BulletShape.CHECKMARK -> "✓ "
+                    BulletShape.ARROW -> "➢ "
+                    BulletShape.STAR -> "★ "
+                    BulletShape.FLORAL -> "❖ "
+                }
+            } else if (currentIsNumberedList) {
+                val blockIdx = state.blocks.indexOfFirst { it.id == block.id }
+                var itemIndex = 1
+                if (blockIdx > 0) {
+                    var prevIdx = blockIdx - 1
+                    var count = 0
+                    while (prevIdx >= 0) {
+                        val prevB = state.blocks[prevIdx]
+                        if (prevB is TextBlock && prevB.isNumberedList) {
+                            count++
+                            prevIdx--
+                        } else {
+                            break
+                        }
                     }
-                },
-                readOnly = state.isProtectedView,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged {
-                        if (it.isFocused && !state.isProtectedView) {
-                            onEvent(RibbonEvent.OnBlockFocusChanged(block.id))
-                        }
-                    },
-                textStyle = createSafeTextStyle(
-                    fontSizeSp = state.fontSize,
-                    fontFamilyStr = state.fontFamily,
-                    lineSpacingFactor = currentLineSpacing,
-                    isBold = if (isFocused) state.isBold else false,
-                    isItalic = if (isFocused) state.isItalic else false,
-                    textColor = state.textColor,
-                    textAlign = alignment,
-                    isRtl = currentIsRtl
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                decorationBox = { innerTextField ->
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        if (block.text.text.isEmpty() && isFocused) {
-                            Text(
-                                text = "Type here...",
-                                color = Color(0xFFAAAAAA),
-                                fontSize = state.fontSize.sp
-                            )
-                        }
-                        innerTextField()
+                    itemIndex = 1 + count
+                }
+                formatNumberingPrefix(itemIndex, currentNumberingStyle)
+            } else ""
+
+            val formatPainterModifier = if (state.isFormatPainterActive) {
+                Modifier.clickable {
+                    state.copiedFormat?.let { fmt ->
+                        onEvent(RibbonEvent.OnFontFamilyChanged(fmt.fontFamily))
+                        onEvent(RibbonEvent.OnFontSizeChanged(fmt.fontSize))
+                        if (fmt.isBold != state.isBold) onEvent(RibbonEvent.OnBoldClicked)
+                        if (fmt.isItalic != state.isItalic) onEvent(RibbonEvent.OnItalicClicked)
+                        if (fmt.isUnderline != state.isUnderline) onEvent(RibbonEvent.OnUnderlineClicked)
+                        onEvent(RibbonEvent.OnTextColorChanged(fmt.textColor))
+                        onEvent(RibbonEvent.OnHighlightColorChanged(fmt.highlightColor))
+                        onEvent(RibbonEvent.OnAlignmentChanged(fmt.alignment))
+                        onEvent(RibbonEvent.OnLineSpacingChanged(fmt.lineSpacing))
+                    }
+                    if (!state.isFormatPainterLocked) {
+                        onEvent(RibbonEvent.OnFormatPainterToggled(false))
                     }
                 }
-            )
+            } else Modifier
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(formatPainterModifier)
+                    .background(shadingBg, RoundedCornerShape(2.dp))
+                    .then(borderModifier)
+                    .padding(
+                        start = if (currentIsRtl) 0.dp else indentPadding,
+                        end = if (currentIsRtl) indentPadding else 0.dp,
+                        top = 2.dp,
+                        bottom = 2.dp
+                    ),
+                verticalAlignment = Alignment.Top
+            ) {
+                if (bulletPrefix.isNotEmpty()) {
+                    Text(
+                        text = bulletPrefix,
+                        fontSize = currentFontSize.sp,
+                        fontFamily = AppFonts.getFontFamily(currentFontFamily),
+                        fontWeight = if (currentIsBold) FontWeight.Bold else FontWeight.Normal,
+                        color = currentTextColor,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+
+                Box(modifier = Modifier.weight(1f)) {
+                    BasicTextField(
+                        value = block.text,
+                        onValueChange = { newText ->
+                            if (!state.isProtectedView) {
+                                onEvent(RibbonEvent.OnDocumentTextChanged(block.id, newText))
+                            }
+                        },
+                        readOnly = state.isProtectedView,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged {
+                                if (it.isFocused && !state.isProtectedView) {
+                                    onEvent(RibbonEvent.OnBlockFocusChanged(block.id))
+                                }
+                            },
+                        textStyle = createSafeTextStyle(
+                            fontSizeSp = currentFontSize,
+                            fontFamilyStr = currentFontFamily,
+                            lineSpacingFactor = currentLineSpacing,
+                            isBold = currentIsBold,
+                            isItalic = currentIsItalic,
+                            textColor = currentTextColor,
+                            textAlign = alignment,
+                            textDecoration = textDecoration,
+                            background = if (currentHighlightColor != Color.Transparent) currentHighlightColor else Color.Unspecified,
+                            isRtl = currentIsRtl
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { innerTextField ->
+                            Box(modifier = Modifier.fillMaxWidth()) {
+                                if (block.text.text.isEmpty() && isFocused) {
+                                    Text(
+                                        text = if (state.isRtl) "ابدأ بالكتابة هنا..." else "Type here...",
+                                        color = Color(0xFFAAAAAA),
+                                        fontSize = currentFontSize.sp,
+                                        fontFamily = AppFonts.getFontFamily(currentFontFamily),
+                                        textAlign = alignment,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                innerTextField()
+                                if (state.showNonPrintingCharacters && isFocused) {
+                                    Text(
+                                        text = " ¶",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.align(if (currentIsRtl) Alignment.CenterStart else Alignment.CenterEnd)
+                                    )
+                                }
+                            }
+                        }
+                    )
+                }
+            }
         }
 
         is TableBlock -> {
@@ -779,7 +913,13 @@ fun RenderDocumentBlock(
                                                 }
                                             },
                                             readOnly = state.isProtectedView,
-                                            modifier = Modifier.fillMaxWidth(),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .onFocusChanged { focusState ->
+                                                    if (focusState.isFocused) {
+                                                        onEvent(RibbonEvent.OnBlockFocusChanged(block.id))
+                                                    }
+                                                },
                                             textStyle = createSafeTextStyle(
                                                 fontSizeSp = (state.fontSize - 2).coerceAtLeast(9),
                                                 fontFamilyStr = state.fontFamily,
@@ -808,6 +948,8 @@ fun RenderDocumentBlock(
                     } catch (e: Exception) { null }
                 }
                 if (bitmap != null) {
+                    val isFocused = state.activeBlockId == block.id
+                    val outlineModifier = if (isFocused) Modifier.border(2.dp, Color(0xFF185ABD)) else Modifier
                     Image(
                         bitmap = bitmap,
                         contentDescription = "Document Image",
@@ -815,16 +957,22 @@ fun RenderDocumentBlock(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 8.dp)
+                            .then(outlineModifier)
+                            .clickable { onEvent(RibbonEvent.OnBlockFocusChanged(block.id)) }
                     )
                 } else {
                     Text("Error loading image", color = Color.Red)
                 }
             } else {
+                val isFocused = state.activeBlockId == block.id
+                val outlineModifier = if (isFocused) Modifier.border(2.dp, Color(0xFF185ABD)) else Modifier
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 8.dp)
+                        .then(outlineModifier)
+                        .clickable { onEvent(RibbonEvent.OnBlockFocusChanged(block.id)) },
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
                 ) {
@@ -852,13 +1000,17 @@ fun RenderDocumentBlock(
         }
 
         is ShapeBlock -> {
+            val isFocused = state.activeBlockId == block.id
+            val outlineModifier = if (isFocused) Modifier.border(4.dp, Color(0xFF185ABD), RoundedCornerShape(4.dp)) else Modifier
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(90.dp)
                     .padding(vertical = 8.dp)
+                    .then(outlineModifier)
                     .background(block.fillColor, RoundedCornerShape(4.dp))
-                    .border(2.dp, block.strokeColor, RoundedCornerShape(4.dp)),
+                    .border(2.dp, block.strokeColor, RoundedCornerShape(4.dp))
+                    .clickable { onEvent(RibbonEvent.OnBlockFocusChanged(block.id)) },
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -1054,6 +1206,7 @@ fun PageHeaderZone(
 }
 
 @Composable
+
 fun PageFooterZone(
     pageNumber: String,
     totalPages: String,
@@ -1114,4 +1267,51 @@ fun PageFooterZone(
             )
         }
     }
+}
+
+private fun formatNumberingPrefix(index: Int, style: NumberingStyle): String {
+    return when (style) {
+        NumberingStyle.DECIMAL_DOT -> "$index. "
+        NumberingStyle.DECIMAL_PAREN -> "$index) "
+        NumberingStyle.ARABIC_ALIF_BAA -> {
+            val abjad = listOf("أ", "ب", "ج", "د", "هـ", "و", "ز", "ح", "ط", "ي", "ك", "ل", "م", "ن", "س", "ع", "ف", "ص", "ق", "ر", "ش", "ت", "ث", "خ", "ذ", "ض", "ظ", "غ")
+            val letter = abjad.getOrElse((index - 1) % abjad.size) { "$index" }
+            "$letter. "
+        }
+        NumberingStyle.ARABIC_INDIC -> {
+            val indicDigits = mapOf('0' to '٠', '1' to '١', '2' to '٢', '3' to '٣', '4' to '٤', '5' to '٥', '6' to '٦', '7' to '٧', '8' to '٨', '9' to '٩')
+            val str = index.toString().map { indicDigits[it] ?: it }.joinToString("")
+            "$str. "
+        }
+        NumberingStyle.ALPHA_UPPER -> {
+            val char = ('A' + (index - 1) % 26)
+            "$char. "
+        }
+        NumberingStyle.ALPHA_LOWER -> {
+            val char = ('a' + (index - 1) % 26)
+            "$char. "
+        }
+        NumberingStyle.ROMAN_UPPER -> {
+            val roman = toRomanNumeral(index)
+            "$roman. "
+        }
+        NumberingStyle.ROMAN_LOWER -> {
+            val roman = toRomanNumeral(index).lowercase()
+            "$roman. "
+        }
+    }
+}
+
+private fun toRomanNumeral(number: Int): String {
+    val numbers = intArrayOf(100, 90, 50, 40, 10, 9, 5, 4, 1)
+    val letters = arrayOf("C", "XC", "L", "XL", "X", "IX", "V", "IV", "I")
+    var num = number
+    val result = StringBuilder()
+    for (i in numbers.indices) {
+        while (num >= numbers[i]) {
+            num -= numbers[i]
+            result.append(letters[i])
+        }
+    }
+    return result.toString().ifEmpty { "$number" }
 }

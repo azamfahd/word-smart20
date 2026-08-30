@@ -4,12 +4,24 @@ import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.TextFieldValue
 
+data class DrawingPath(
+    val path: androidx.compose.ui.graphics.Path,
+    val pageIndex: Int = 0,
+    val color: Color,
+    val strokeWidth: Float,
+    val isHighlighter: Boolean = false
+)
+
 data class EditorState(
     // Core Document Engine (Block-based for Compose & OOXML compatibility)
-    val blocks: List<DocumentBlock> = listOf(
-        TextBlock("blk_initial", TextFieldValue("ابدأ بكتابة مستندك هنا..."))
-    ),
-    val activeBlockId: String = "blk_initial",
+    val blocks: List<DocumentBlock> = DocumentFactory.createComprehensiveTestDocument(),
+    val drawingPaths: List<DrawingPath> = emptyList(),
+    val isDrawingMode: Boolean = false,
+    val inkColor: Color = Color.Black,
+    val inkThickness: Float = 4f,
+    val isHighlighterMode: Boolean = false,
+    val isEraserMode: Boolean = false,
+    val activeBlockId: String = blocks.firstOrNull()?.id ?: "blk_initial",
     val documentTitle: String = "مستند1",
     val currentUri: Uri? = null,
     val cloudDocId: String? = null,
@@ -39,6 +51,12 @@ data class EditorState(
     val underlineStyle: UnderlineStyle = UnderlineStyle.SINGLE,
     val textColor: Color = Color.Black,
     val highlightColor: Color = Color.Transparent,
+    val textEffect: TextEffectType = TextEffectType.NONE,
+    
+    // Clipboard & Format Painter State
+    val isFormatPainterActive: Boolean = false,
+    val isFormatPainterLocked: Boolean = false,
+    val copiedFormat: CopiedCharacterFormat? = null,
     
     // Paragraph State
     val alignment: TextAlignment = TextAlignment.RIGHT,
@@ -46,7 +64,17 @@ data class EditorState(
     val lineSpacing: Float = 1.15f,
     val indentLevel: Int = 0,
     val isBulletedList: Boolean = false,
+    val bulletShape: BulletShape = BulletShape.DISC,
     val isNumberedList: Boolean = false,
+    val numberingStyle: NumberingStyle = NumberingStyle.DECIMAL_DOT,
+    val multilevelStyle: MultilevelStyle = MultilevelStyle.NONE,
+    val paragraphShadingColor: Color? = null,
+    val paragraphBorder: ParagraphBorder = ParagraphBorder.NONE,
+    val showNonPrintingCharacters: Boolean = false,
+    
+    // Custom Styles Library
+    val customStyles: List<CustomStyleModel> = emptyList(),
+    val selectedStyleName: String = "Normal",
     
     // Page Layout State
     val pageSize: PageSize = PageSize.A4,
@@ -62,7 +90,7 @@ data class EditorState(
     val pageSecondaryColor: Color? = null,
     
     // Canvas Zoom & Pan & View Customization (Windows Style)
-    val zoomScale: Float = 1.30f,
+    val zoomScale: Float = 1.0f,
     val viewMode: ViewMode = ViewMode.PRINT_LAYOUT,
     
     // Localization & Typography
@@ -72,10 +100,11 @@ data class EditorState(
     // Dialogs & Exports
     val showWordCountDialog: Boolean = false,
     val showFindReplaceDialog: Boolean = false,
+    val showTemplatesDialog: Boolean = false,
     val showExportPdfSuccessDialog: Boolean = false,
     val activeGroupDetailsDialog: String? = null,
     val exportedPdfUri: Uri? = null,
-    val isProtectedView: Boolean = false,
+    val isProtectedView: Boolean = true,
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val userErrorMessage: String? = null
@@ -90,7 +119,22 @@ data class TextBlock(
     val text: TextFieldValue,
     val alignment: TextAlignment = TextAlignment.RIGHT,
     val lineSpacing: Float = 1.15f,
-    val isRtl: Boolean = true
+    val isRtl: Boolean = true,
+    val indentLevel: Int = 0,
+    val isBulletedList: Boolean = false,
+    val bulletShape: BulletShape = BulletShape.DISC,
+    val isNumberedList: Boolean = false,
+    val numberingStyle: NumberingStyle = NumberingStyle.DECIMAL_DOT,
+    val paragraphShadingColor: Color? = null,
+    val paragraphBorder: ParagraphBorder = ParagraphBorder.NONE,
+    val fontSize: Int = 12,
+    val fontFamily: String = "Calibri",
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderline: Boolean = false,
+    val isStrikethrough: Boolean = false,
+    val textColor: Color = Color.Black,
+    val highlightColor: Color = Color.Transparent
 ) : DocumentBlock()
 
 data class TableCellModel(
@@ -186,16 +230,62 @@ enum class ShapeType { RECTANGLE, OVAL, ARROW, LINE, STAR }
 enum class RibbonTab(val title: String) {
     FILE("File"), 
     HOME("Home"), 
-    INSERT("Insert"), 
+    INSERT("Insert"),
+    DRAW("Draw"),
     DESIGN("Design"),
     LAYOUT("Layout"), 
+    REFERENCES("References"),
+    MAILINGS("Mailings"),
     REVIEW("Review"),
-    VIEW("View")
+    VIEW("View"),
+    HELP("Help"),
+    PICTURE_FORMAT("Picture Format"),
+    TABLE_DESIGN("Table Design"),
+    SHAPE_FORMAT("Shape Format");
+    
+    companion object {
+        val standardTabs = listOf(FILE, HOME, INSERT, DRAW, DESIGN, LAYOUT, REFERENCES, MAILINGS, REVIEW, VIEW, HELP)
+    }
 }
 
 enum class TextAlignment { LEFT, CENTER, RIGHT, JUSTIFY }
 enum class NumeralSystem { WESTERN, ARABIC }
-enum class UnderlineStyle { SINGLE, DOUBLE, DOTTED, NONE }
+enum class UnderlineStyle { SINGLE, DOUBLE, DOTTED, DASHED, WAVY, NONE }
+enum class TextEffectType { NONE, SHADOW, OUTLINE, GLOW, REFLECTION, GRADIENT }
+
+enum class PasteMode { KEEP_SOURCE, MERGE_FORMATTING, KEEP_TEXT_ONLY, SPECIAL }
+enum class BulletShape { DISC, CIRCLE, SQUARE, HOLLOW_SQUARE, CHECKMARK, ARROW, STAR, FLORAL }
+enum class NumberingStyle { DECIMAL_DOT, DECIMAL_PAREN, ARABIC_ALIF_BAA, ARABIC_INDIC, ALPHA_UPPER, ALPHA_LOWER, ROMAN_UPPER, ROMAN_LOWER }
+enum class MultilevelStyle { NONE, NUMERIC_LEVELS, ALPHA_NUMERIC, HEADING_LEVELS }
+enum class ParagraphBorder { NONE, BOTTOM, TOP, LEFT, RIGHT, ALL, OUTSIDE }
+
+data class CopiedCharacterFormat(
+    val fontFamily: String = "Calibri",
+    val fontSize: Int = 12,
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderline: Boolean = false,
+    val isStrikethrough: Boolean = false,
+    val isSubscript: Boolean = false,
+    val isSuperscript: Boolean = false,
+    val textColor: Color = Color.Black,
+    val highlightColor: Color = Color.Transparent,
+    val alignment: TextAlignment = TextAlignment.RIGHT,
+    val lineSpacing: Float = 1.15f
+)
+
+data class CustomStyleModel(
+    val id: String,
+    val name: String,
+    val fontFamily: String = "Calibri",
+    val fontSize: Int = 12,
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isUnderline: Boolean = false,
+    val textColor: Color = Color.Black,
+    val alignment: TextAlignment = TextAlignment.RIGHT,
+    val lineSpacing: Float = 1.15f
+)
 
 enum class ViewMode { PRINT_LAYOUT, WEB_LAYOUT, READ_MODE }
 
@@ -222,6 +312,7 @@ sealed class RibbonEvent {
     object OnNewDocument : RibbonEvent()
     data class OnZoomChanged(val scale: Float) : RibbonEvent()
     data class OnViewModeChanged(val mode: ViewMode) : RibbonEvent()
+    object OnToggleProtectedView : RibbonEvent()
     object OnSaveToCloudClicked : RibbonEvent()
     data class OnCloudDocIdSaved(val id: String) : RibbonEvent()
     data class OnLoadFromCloud(val cloudDocumentId: String, val base64Data: String) : RibbonEvent()
@@ -238,6 +329,7 @@ sealed class RibbonEvent {
     data class OnBlockFocusChanged(val blockId: String) : RibbonEvent()
     data class OnAddParagraphAfter(val blockId: String) : RibbonEvent()
     data class OnDeleteBlockIfEmpty(val blockId: String) : RibbonEvent()
+    data class OnDeleteBlock(val blockId: String) : RibbonEvent()
     
     // Header & Footer
     object OnToggleHeaderFooterMode : RibbonEvent()
@@ -260,6 +352,8 @@ sealed class RibbonEvent {
     object OnCutClicked : RibbonEvent()
     object OnCopyClicked : RibbonEvent()
     object OnPasteClicked : RibbonEvent()
+    data class OnPasteSpecialClicked(val pasteMode: PasteMode) : RibbonEvent()
+    data class OnFormatPainterToggled(val isLocked: Boolean = false) : RibbonEvent()
     object OnCutTextFromSelection : RibbonEvent()
     data class OnPasteTextAtSelection(val text: String) : RibbonEvent()
     
@@ -275,6 +369,7 @@ sealed class RibbonEvent {
     object OnSuperscriptClicked : RibbonEvent()
     data class OnTextColorChanged(val color: Color) : RibbonEvent()
     data class OnHighlightColorChanged(val color: Color) : RibbonEvent()
+    data class OnTextEffectChanged(val effect: TextEffectType) : RibbonEvent()
     object OnClearFormattingClicked : RibbonEvent()
     data class OnNumeralSystemChanged(val system: NumeralSystem) : RibbonEvent()
     
@@ -285,7 +380,32 @@ sealed class RibbonEvent {
     object OnDecreaseIndentClicked : RibbonEvent()
     object OnTextDirectionToggled : RibbonEvent()
     object OnBulletedListToggled : RibbonEvent()
+    data class OnBulletShapeChanged(val shape: BulletShape) : RibbonEvent()
     object OnNumberedListToggled : RibbonEvent()
+    data class OnNumberingStyleChanged(val style: NumberingStyle) : RibbonEvent()
+    data class OnMultilevelStyleChanged(val style: MultilevelStyle) : RibbonEvent()
+    data class OnSortParagraphsClicked(val ascending: Boolean = true) : RibbonEvent()
+    object OnToggleNonPrintingCharacters : RibbonEvent()
+    data class OnParagraphShadingChanged(val color: Color?) : RibbonEvent()
+    data class OnParagraphBorderChanged(val border: ParagraphBorder) : RibbonEvent()
+    
+    // Styles
+    data class OnApplyHeadingStyle(val styleName: String) : RibbonEvent()
+    data class OnCreateCustomStyle(
+        val name: String,
+        val fontFamily: String,
+        val fontSize: Int,
+        val isBold: Boolean,
+        val isItalic: Boolean,
+        val textColor: Color,
+        val alignment: TextAlignment
+    ) : RibbonEvent()
+    data class OnApplyCustomStyle(val style: CustomStyleModel) : RibbonEvent()
+    
+    // Selection & Editing
+    object OnSelectAllClicked : RibbonEvent()
+    object OnSelectCurrentBlockClicked : RibbonEvent()
+    object OnSelectSimilarFormattingClicked : RibbonEvent()
     
     // Page Layout
     data class OnPageSizeChanged(val size: PageSize) : RibbonEvent()
@@ -304,9 +424,11 @@ sealed class RibbonEvent {
     object OnIncreaseFontSizeClicked : RibbonEvent()
     object OnDecreaseFontSizeClicked : RibbonEvent()
     data class OnChangeCaseClicked(val caseType: String) : RibbonEvent()
-    data class OnApplyHeadingStyle(val styleName: String) : RibbonEvent()
     object OnShowFindReplaceDialog : RibbonEvent()
     object OnDismissFindReplaceDialog : RibbonEvent()
+    object OnShowTemplatesDialog : RibbonEvent()
+    object OnDismissTemplatesDialog : RibbonEvent()
+    data class OnApplyDocumentTemplate(val templateId: String) : RibbonEvent()
     data class OnFindAndReplaceClicked(val findText: String, val replaceText: String) : RibbonEvent()
     data class OnShowGroupDetails(val groupName: String) : RibbonEvent()
     object OnDismissGroupDetails : RibbonEvent()
@@ -318,8 +440,22 @@ sealed class RibbonEvent {
     data class OnInsertCalloutClicked(val title: String, val text: String) : RibbonEvent()
     object OnInsertDividerClicked : RibbonEvent()
     object OnInsertSignatureLineClicked : RibbonEvent()
+    
+    // Drawing Events
+    object OnToggleDrawingMode : RibbonEvent()
+    object OnToggleHighlighterMode : RibbonEvent()
+    object OnToggleEraserMode : RibbonEvent()
+    data class OnInkColorChanged(val color: Color) : RibbonEvent()
+    data class OnInkThicknessChanged(val thickness: Float) : RibbonEvent()
+    data class OnDrawPathAdded(val path: DrawingPath) : RibbonEvent()
+    object OnClearDrawing : RibbonEvent()
     data class OnInsertSymbolClicked(val symbol: String) : RibbonEvent()
     object OnEnableEditing : RibbonEvent()
     data class OnSetUserError(val message: String) : RibbonEvent()
     object OnDismissUserError : RibbonEvent()
 }
+
+// Mail Merge Architecture Enums
+enum class MailMergeState { IDLE, SELECTING_RECIPIENTS, INSERTING_FIELDS, PREVIEWING, FINISHED }
+data class MailMergeRecipient(val id: String, val name: String, val email: String)
+data class MailMergeField(val id: String, val label: String)

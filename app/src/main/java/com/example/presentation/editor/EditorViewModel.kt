@@ -144,7 +144,7 @@ class EditorViewModel : ViewModel() {
             pageStripeStyle = pageStripeStyle,
             pageAccentColor = pageAccentColor,
             pageSecondaryColor = pageSecondaryColor,
-            isProtectedView = true,
+            isProtectedView = false,
             currentUri = null,
             isFileMenuOpen = false
         )
@@ -186,6 +186,7 @@ class EditorViewModel : ViewModel() {
                             watermarkText = model.watermarkText,
                             fontFamily = model.defaultFontFamily,
                             fontSize = model.defaultFontSize,
+                            isProtectedView = true,
                             cloudDocId = event.cloudDocumentId
                         )
                     }
@@ -196,7 +197,13 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.ChangeTab -> _state.update { it.copy(activeTab = event.tab) }
             is RibbonEvent.OnLanguageToggled -> _state.update { it.copy(isRtl = !it.isRtl) }
             is RibbonEvent.OnZoomChanged -> _state.update { it.copy(zoomScale = event.scale.coerceIn(0.4f, 3.5f)) }
-            is RibbonEvent.OnViewModeChanged -> _state.update { it.copy(viewMode = event.mode) }
+            is RibbonEvent.OnViewModeChanged -> _state.update { 
+                it.copy(
+                    viewMode = event.mode,
+                    isProtectedView = (event.mode == ViewMode.READ_MODE)
+                ) 
+            }
+            is RibbonEvent.OnToggleProtectedView -> _state.update { it.copy(isProtectedView = !it.isProtectedView) }
             
             is RibbonEvent.OnDocumentImported -> {
                 _state.update {
@@ -214,6 +221,7 @@ class EditorViewModel : ViewModel() {
                         watermarkText = event.model.watermarkText,
                         fontFamily = event.model.defaultFontFamily,
                         fontSize = event.model.defaultFontSize,
+                        isProtectedView = true,
                         currentUri = event.uri,
                         isFileMenuOpen = false
                     )
@@ -228,6 +236,7 @@ class EditorViewModel : ViewModel() {
                         documentTitle = "مستند1",
                         headerText = TextFieldValue(""),
                         footerText = TextFieldValue(""),
+                        isProtectedView = false,
                         currentUri = null,
                         isFileMenuOpen = false
                     )
@@ -248,21 +257,106 @@ class EditorViewModel : ViewModel() {
                     state.copy(blocks = newBlocks, activeBlockId = event.blockId)
                 }
             }
-            is RibbonEvent.OnBlockFocusChanged -> _state.update { it.copy(activeBlockId = event.blockId) }
+            is RibbonEvent.OnBlockFocusChanged -> {
+                _state.update { state ->
+                    val block = state.blocks.find { it.id == event.blockId } as? TextBlock
+                    if (block != null) {
+                        state.copy(
+                            activeBlockId = event.blockId,
+                            fontSize = block.fontSize,
+                            fontFamily = block.fontFamily,
+                            isBold = block.isBold,
+                            isItalic = block.isItalic,
+                            isUnderline = block.isUnderline,
+                            isStrikethrough = block.isStrikethrough,
+                            textColor = block.textColor,
+                            highlightColor = block.highlightColor,
+                            alignment = block.alignment,
+                            lineSpacing = block.lineSpacing,
+                            isTextRtl = block.isRtl,
+                            indentLevel = block.indentLevel,
+                            isBulletedList = block.isBulletedList,
+                            bulletShape = block.bulletShape,
+                            isNumberedList = block.isNumberedList,
+                            numberingStyle = block.numberingStyle,
+                            paragraphShadingColor = block.paragraphShadingColor,
+                            paragraphBorder = block.paragraphBorder
+                        )
+                    } else {
+                        state.copy(activeBlockId = event.blockId)
+                    }
+                }
+            }
             
             is RibbonEvent.OnAddParagraphAfter -> {
                 val stateVal = _state.value
                 val idx = stateVal.blocks.indexOfFirst { it.id == event.blockId }
                 if (idx != -1) {
+                    val prevBlock = stateVal.blocks[idx] as? TextBlock
                     val newId = "blk_${UUID.randomUUID()}"
-                    val newBlock = TextBlock(newId, TextFieldValue(""))
+                    val newBlock = if (prevBlock != null) {
+                        TextBlock(
+                            id = newId,
+                            text = TextFieldValue(""),
+                            alignment = prevBlock.alignment,
+                            lineSpacing = prevBlock.lineSpacing,
+                            isRtl = prevBlock.isRtl,
+                            indentLevel = prevBlock.indentLevel,
+                            isBulletedList = prevBlock.isBulletedList,
+                            bulletShape = prevBlock.bulletShape,
+                            isNumberedList = prevBlock.isNumberedList,
+                            numberingStyle = prevBlock.numberingStyle,
+                            paragraphShadingColor = prevBlock.paragraphShadingColor,
+                            paragraphBorder = prevBlock.paragraphBorder,
+                            fontSize = prevBlock.fontSize,
+                            fontFamily = prevBlock.fontFamily,
+                            isBold = prevBlock.isBold,
+                            isItalic = prevBlock.isItalic,
+                            isUnderline = prevBlock.isUnderline,
+                            isStrikethrough = prevBlock.isStrikethrough,
+                            textColor = prevBlock.textColor,
+                            highlightColor = prevBlock.highlightColor
+                        )
+                    } else {
+                        TextBlock(newId, TextFieldValue(""))
+                    }
                     val newBlocks = stateVal.blocks.toMutableList()
                     newBlocks.add(idx + 1, newBlock)
-                    _state.update { it.copy(blocks = newBlocks, activeBlockId = newId) }
+                    _state.update { 
+                        it.copy(
+                            blocks = newBlocks, 
+                            activeBlockId = newId,
+                            fontSize = newBlock.fontSize,
+                            fontFamily = newBlock.fontFamily,
+                            isBold = newBlock.isBold,
+                            isItalic = newBlock.isItalic,
+                            isUnderline = newBlock.isUnderline,
+                            isStrikethrough = newBlock.isStrikethrough,
+                            textColor = newBlock.textColor,
+                            highlightColor = newBlock.highlightColor,
+                            isBulletedList = newBlock.isBulletedList,
+                            bulletShape = newBlock.bulletShape,
+                            isNumberedList = newBlock.isNumberedList,
+                            numberingStyle = newBlock.numberingStyle
+                        ) 
+                    }
                 }
             }
 
             is RibbonEvent.OnDeleteBlockIfEmpty -> {
+                val stateVal = _state.value
+                if (stateVal.blocks.size > 1) {
+                    val idx = stateVal.blocks.indexOfFirst { it.id == event.blockId }
+                    if (idx != -1) {
+                        val newBlocks = stateVal.blocks.toMutableList()
+                        newBlocks.removeAt(idx)
+                        val newActiveId = if (idx > 0) newBlocks[idx - 1].id else newBlocks.first().id
+                        _state.update { it.copy(blocks = newBlocks, activeBlockId = newActiveId) }
+                    }
+                }
+            }
+            is RibbonEvent.OnDeleteBlock -> {
+                pushUndoState()
                 val stateVal = _state.value
                 if (stateVal.blocks.size > 1) {
                     val idx = stateVal.blocks.indexOfFirst { it.id == event.blockId }
@@ -329,10 +423,39 @@ class EditorViewModel : ViewModel() {
                 _state.update { it.copy(footerText = newFooter, showPageNumbers = true) }
             }
             
-            // Clipboard
+            // Clipboard & Format Painter
             is RibbonEvent.OnCutClicked -> {}
             is RibbonEvent.OnCopyClicked -> {}
             is RibbonEvent.OnPasteClicked -> {}
+            is RibbonEvent.OnPasteSpecialClicked -> {} // Handled with platform clipboard in UI
+            is RibbonEvent.OnFormatPainterToggled -> {
+                val current = _state.value
+                if (current.isFormatPainterActive && !event.isLocked) {
+                    _state.update { it.copy(isFormatPainterActive = false, isFormatPainterLocked = false) }
+                } else {
+                    val format = CopiedCharacterFormat(
+                        fontFamily = current.fontFamily,
+                        fontSize = current.fontSize,
+                        isBold = current.isBold,
+                        isItalic = current.isItalic,
+                        isUnderline = current.isUnderline,
+                        isStrikethrough = current.isStrikethrough,
+                        isSubscript = current.isSubscript,
+                        isSuperscript = current.isSuperscript,
+                        textColor = current.textColor,
+                        highlightColor = current.highlightColor,
+                        alignment = current.alignment,
+                        lineSpacing = current.lineSpacing
+                    )
+                    _state.update { 
+                        it.copy(
+                            isFormatPainterActive = true, 
+                            isFormatPainterLocked = event.isLocked,
+                            copiedFormat = format
+                        ) 
+                    }
+                }
+            }
             is RibbonEvent.OnCutTextFromSelection -> {
                 pushUndoState()
                 val stateVal = _state.value
@@ -376,12 +499,52 @@ class EditorViewModel : ViewModel() {
                 }
             }
             
+            // Selection actions
+            is RibbonEvent.OnSelectAllClicked -> {
+                val stateVal = _state.value
+                val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+                if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+                    val tb = stateVal.blocks[activeIdx] as TextBlock
+                    val len = tb.text.annotatedString.length
+                    val updated = tb.copy(text = tb.text.copy(selection = TextRange(0, len)))
+                    val newBlocks = stateVal.blocks.toMutableList()
+                    newBlocks[activeIdx] = updated
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
+            }
+            is RibbonEvent.OnSelectCurrentBlockClicked -> {
+                val stateVal = _state.value
+                val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+                if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+                    val tb = stateVal.blocks[activeIdx] as TextBlock
+                    val len = tb.text.annotatedString.length
+                    val updated = tb.copy(text = tb.text.copy(selection = TextRange(0, len)))
+                    val newBlocks = stateVal.blocks.toMutableList()
+                    newBlocks[activeIdx] = updated
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
+            }
+            is RibbonEvent.OnSelectSimilarFormattingClicked -> {
+                // Select block
+                val stateVal = _state.value
+                val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
+                if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
+                    val tb = stateVal.blocks[activeIdx] as TextBlock
+                    val len = tb.text.annotatedString.length
+                    val updated = tb.copy(text = tb.text.copy(selection = TextRange(0, len)))
+                    val newBlocks = stateVal.blocks.toMutableList()
+                    newBlocks[activeIdx] = updated
+                    _state.update { it.copy(blocks = newBlocks) }
+                }
+            }
+            
             // Character Formatting Updates
             is RibbonEvent.OnFontFamilyChanged -> {
                 pushUndoState()
                 val fontName = event.family
                 com.example.presentation.editor.font.FontEngine.addRecentFont(fontName)
                 _state.update { it.copy(fontFamily = fontName) }
+                updateActiveBlock { if (it is TextBlock) it.copy(fontFamily = fontName) else it }
                 
                 val stateVal = _state.value
                 val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock
@@ -403,24 +566,28 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnFontSizeChanged -> {
                 pushUndoState()
                 _state.update { it.copy(fontSize = event.size) }
+                updateActiveBlock { if (it is TextBlock) it.copy(fontSize = event.size) else it }
                 applyStyleToSelection(SpanStyle(fontSize = event.size.sp))
             }
             is RibbonEvent.OnBoldClicked -> {
                 pushUndoState()
                 val newBold = !_state.value.isBold
                 _state.update { it.copy(isBold = newBold) }
+                updateActiveBlock { if (it is TextBlock) it.copy(isBold = newBold) else it }
                 applyStyleToSelection(SpanStyle(fontWeight = if (newBold) FontWeight.Bold else FontWeight.Normal))
             }
             is RibbonEvent.OnItalicClicked -> {
                 pushUndoState()
                 val newItalic = !_state.value.isItalic
                 _state.update { it.copy(isItalic = newItalic) }
+                updateActiveBlock { if (it is TextBlock) it.copy(isItalic = newItalic) else it }
                 applyStyleToSelection(SpanStyle(fontStyle = if (newItalic) FontStyle.Italic else FontStyle.Normal))
             }
             is RibbonEvent.OnUnderlineClicked -> {
                 pushUndoState()
                 val newUnderline = !_state.value.isUnderline
                 _state.update { it.copy(isUnderline = newUnderline) }
+                updateActiveBlock { if (it is TextBlock) it.copy(isUnderline = newUnderline) else it }
                 applyStyleToSelection(SpanStyle(textDecoration = if (newUnderline) TextDecoration.Underline else TextDecoration.None))
             }
             is RibbonEvent.OnUnderlineStyleChanged -> { 
@@ -431,6 +598,7 @@ class EditorViewModel : ViewModel() {
                 pushUndoState()
                 val newStrike = !_state.value.isStrikethrough
                 _state.update { it.copy(isStrikethrough = newStrike) }
+                updateActiveBlock { if (it is TextBlock) it.copy(isStrikethrough = newStrike) else it }
                 applyStyleToSelection(SpanStyle(textDecoration = if (newStrike) TextDecoration.LineThrough else TextDecoration.None))
             }
             is RibbonEvent.OnSubscriptClicked -> {
@@ -448,12 +616,26 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnTextColorChanged -> {
                 pushUndoState()
                 _state.update { it.copy(textColor = event.color) }
+                updateActiveBlock { if (it is TextBlock) it.copy(textColor = event.color) else it }
                 applyStyleToSelection(SpanStyle(color = event.color))
             }
             is RibbonEvent.OnHighlightColorChanged -> {
                 pushUndoState()
                 _state.update { it.copy(highlightColor = event.color) }
+                updateActiveBlock { if (it is TextBlock) it.copy(highlightColor = event.color) else it }
                 applyStyleToSelection(SpanStyle(background = event.color))
+            }
+            is RibbonEvent.OnTextEffectChanged -> {
+                pushUndoState()
+                _state.update { it.copy(textEffect = event.effect) }
+                when (event.effect) {
+                    TextEffectType.SHADOW -> applyStyleToSelection(SpanStyle(shadow = androidx.compose.ui.graphics.Shadow(color = Color(0x88000000), offset = androidx.compose.ui.geometry.Offset(2f, 2f), blurRadius = 3f)))
+                    TextEffectType.GLOW -> applyStyleToSelection(SpanStyle(shadow = androidx.compose.ui.graphics.Shadow(color = Color(0xFFFFB300), blurRadius = 8f)))
+                    TextEffectType.REFLECTION -> applyStyleToSelection(SpanStyle(shadow = androidx.compose.ui.graphics.Shadow(color = Color(0x664A90E2), offset = androidx.compose.ui.geometry.Offset(0f, 4f), blurRadius = 4f)))
+                    TextEffectType.OUTLINE -> applyStyleToSelection(SpanStyle(color = Color(0xFF1D4ED8), fontWeight = FontWeight.ExtraBold))
+                    TextEffectType.GRADIENT -> applyStyleToSelection(SpanStyle(color = Color(0xFF7C3AED)))
+                    TextEffectType.NONE -> applyStyleToSelection(SpanStyle(shadow = null))
+                }
             }
             is RibbonEvent.OnClearFormattingClicked -> {
                 pushUndoState()
@@ -482,10 +664,16 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnIncreaseIndentClicked -> {
                 pushUndoState()
                 _state.update { it.copy(indentLevel = it.indentLevel + 1) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(indentLevel = _state.value.indentLevel) else block
+                }
             }
             is RibbonEvent.OnDecreaseIndentClicked -> {
                 pushUndoState()
                 _state.update { it.copy(indentLevel = maxOf(0, it.indentLevel - 1)) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(indentLevel = _state.value.indentLevel) else block
+                }
             }
             is RibbonEvent.OnTextDirectionToggled -> {
                 val newRtl = !_state.value.isTextRtl
@@ -494,8 +682,96 @@ class EditorViewModel : ViewModel() {
                     if (block is TextBlock) block.copy(isRtl = newRtl) else block
                 }
             }
-            is RibbonEvent.OnBulletedListToggled -> { _state.update { it.copy(isBulletedList = !it.isBulletedList, isNumberedList = false) } }
-            is RibbonEvent.OnNumberedListToggled -> { _state.update { it.copy(isNumberedList = !it.isNumberedList, isBulletedList = false) } }
+            is RibbonEvent.OnBulletedListToggled -> {
+                pushUndoState()
+                _state.update { it.copy(isBulletedList = !it.isBulletedList, isNumberedList = false) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(isBulletedList = _state.value.isBulletedList, isNumberedList = false) else block
+                }
+            }
+            is RibbonEvent.OnBulletShapeChanged -> {
+                pushUndoState()
+                _state.update { it.copy(isBulletedList = true, bulletShape = event.shape, isNumberedList = false) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(isBulletedList = true, bulletShape = event.shape, isNumberedList = false) else block
+                }
+            }
+            is RibbonEvent.OnNumberedListToggled -> {
+                pushUndoState()
+                _state.update { it.copy(isNumberedList = !it.isNumberedList, isBulletedList = false) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(isNumberedList = _state.value.isNumberedList, isBulletedList = false) else block
+                }
+            }
+            is RibbonEvent.OnNumberingStyleChanged -> {
+                pushUndoState()
+                _state.update { it.copy(isNumberedList = true, numberingStyle = event.style, isBulletedList = false) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(isNumberedList = true, numberingStyle = event.style, isBulletedList = false) else block
+                }
+            }
+            is RibbonEvent.OnMultilevelStyleChanged -> {
+                pushUndoState()
+                _state.update { it.copy(multilevelStyle = event.style) }
+            }
+            is RibbonEvent.OnSortParagraphsClicked -> {
+                pushUndoState()
+                sortParagraphs(event.ascending)
+            }
+            is RibbonEvent.OnToggleNonPrintingCharacters -> {
+                _state.update { it.copy(showNonPrintingCharacters = !it.showNonPrintingCharacters) }
+            }
+            is RibbonEvent.OnParagraphShadingChanged -> {
+                pushUndoState()
+                _state.update { it.copy(paragraphShadingColor = event.color) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(paragraphShadingColor = event.color) else block
+                }
+            }
+            is RibbonEvent.OnParagraphBorderChanged -> {
+                pushUndoState()
+                _state.update { it.copy(paragraphBorder = event.border) }
+                updateActiveBlock { block ->
+                    if (block is TextBlock) block.copy(paragraphBorder = event.border) else block
+                }
+            }
+            
+            // Custom Styles
+            is RibbonEvent.OnCreateCustomStyle -> {
+                val newStyle = CustomStyleModel(
+                    id = "style_${UUID.randomUUID()}",
+                    name = event.name,
+                    fontFamily = event.fontFamily,
+                    fontSize = event.fontSize,
+                    isBold = event.isBold,
+                    isItalic = event.isItalic,
+                    textColor = event.textColor,
+                    alignment = event.alignment
+                )
+                _state.update { it.copy(customStyles = it.customStyles + newStyle) }
+            }
+            is RibbonEvent.OnApplyCustomStyle -> {
+                pushUndoState()
+                val st = event.style
+                _state.update {
+                    it.copy(
+                        fontFamily = st.fontFamily,
+                        fontSize = st.fontSize,
+                        isBold = st.isBold,
+                        isItalic = st.isItalic,
+                        textColor = st.textColor,
+                        alignment = st.alignment
+                    )
+                }
+                applyStyleToSelection(
+                    SpanStyle(
+                        fontSize = st.fontSize.sp,
+                        fontWeight = if (st.isBold) FontWeight.Bold else FontWeight.Normal,
+                        fontStyle = if (st.isItalic) FontStyle.Italic else FontStyle.Normal,
+                        color = st.textColor
+                    )
+                )
+            }
             is RibbonEvent.OnSetUserError -> { _state.update { it.copy(userErrorMessage = event.message) } }
             is RibbonEvent.OnDismissUserError -> { _state.update { it.copy(userErrorMessage = null) } }
             
@@ -514,6 +790,8 @@ class EditorViewModel : ViewModel() {
                     "Modern" -> _state.update { it.copy(fontFamily = "Arial", textColor = Color(0xFF1E293B), pageColor = Color(0xFFF8FAFC)) }
                     "Formal" -> _state.update { it.copy(fontFamily = "Times New Roman", textColor = Color(0xFF0F172A), pageColor = Color(0xFFFFFDF5)) }
                     "Classic" -> _state.update { it.copy(fontFamily = "Georgia", textColor = Color(0xFF1A1A1A), pageColor = Color(0xFFFAFAFA)) }
+                    "Emerald" -> _state.update { it.copy(fontFamily = "Calibri", textColor = Color(0xFF064E3B), pageColor = Color(0xFFF0FDF4)) }
+                    "Warm Amber" -> _state.update { it.copy(fontFamily = "Times New Roman", textColor = Color(0xFF78350F), pageColor = Color(0xFFFFFBEB)) }
                 }
             }
 
@@ -566,6 +844,26 @@ class EditorViewModel : ViewModel() {
             }
             is RibbonEvent.OnShowFindReplaceDialog -> _state.update { it.copy(showFindReplaceDialog = true) }
             is RibbonEvent.OnDismissFindReplaceDialog -> _state.update { it.copy(showFindReplaceDialog = false) }
+            is RibbonEvent.OnShowTemplatesDialog -> _state.update { it.copy(showTemplatesDialog = true) }
+            is RibbonEvent.OnDismissTemplatesDialog -> _state.update { it.copy(showTemplatesDialog = false) }
+            is RibbonEvent.OnApplyDocumentTemplate -> {
+                pushUndoState()
+                val newBlocks = when (event.templateId) {
+                    "RESUME" -> DocumentFactory.createResumeTemplate()
+                    "BUSINESS_LETTER" -> DocumentFactory.createBusinessLetterTemplate()
+                    "EXECUTIVE_REPORT" -> DocumentFactory.createExecutiveReportTemplate()
+                    "ACADEMIC_PAPER" -> DocumentFactory.createAcademicPaperTemplate()
+                    else -> DocumentFactory.createComprehensiveTestDocument()
+                }
+                _state.update {
+                    it.copy(
+                        blocks = newBlocks,
+                        activeBlockId = newBlocks.firstOrNull()?.id ?: "blk_initial",
+                        isProtectedView = true,
+                        showTemplatesDialog = false
+                    )
+                }
+            }
             is RibbonEvent.OnFindAndReplaceClicked -> {
                 pushUndoState()
                 performFindAndReplace(event.findText, event.replaceText)
@@ -580,6 +878,15 @@ class EditorViewModel : ViewModel() {
             is RibbonEvent.OnInsertCalloutClicked -> insertBlockAtCursor(CalloutBlock("clt_${UUID.randomUUID()}", title = event.title, text = TextFieldValue(event.text)))
             is RibbonEvent.OnInsertDividerClicked -> insertBlockAtCursor(DividerBlock("div_${UUID.randomUUID()}"))
             is RibbonEvent.OnInsertSignatureLineClicked -> insertBlockAtCursor(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("\n_________________________\nالتوقيع / Signature\n")))
+            
+            // Drawing
+            is RibbonEvent.OnToggleDrawingMode -> { _state.update { it.copy(isDrawingMode = !it.isDrawingMode, isEraserMode = false) } }
+            is RibbonEvent.OnToggleHighlighterMode -> { _state.update { it.copy(isDrawingMode = true, isHighlighterMode = !it.isHighlighterMode, isEraserMode = false) } }
+            is RibbonEvent.OnToggleEraserMode -> { _state.update { it.copy(isDrawingMode = true, isEraserMode = !it.isEraserMode, isHighlighterMode = false) } }
+            is RibbonEvent.OnInkColorChanged -> { _state.update { it.copy(inkColor = event.color, isEraserMode = false) } }
+            is RibbonEvent.OnInkThicknessChanged -> { _state.update { it.copy(inkThickness = event.thickness) } }
+            is RibbonEvent.OnDrawPathAdded -> { _state.update { it.copy(drawingPaths = it.drawingPaths + event.path) } }
+            is RibbonEvent.OnClearDrawing -> { _state.update { it.copy(drawingPaths = emptyList()) } }
             is RibbonEvent.OnInsertSymbolClicked -> {
                 pushUndoState()
                 val activeIdx = _state.value.blocks.indexOfFirst { it.id == _state.value.activeBlockId }
@@ -623,16 +930,39 @@ class EditorViewModel : ViewModel() {
         val stateVal = _state.value
         val activeIdx = stateVal.blocks.indexOfFirst { it.id == stateVal.activeBlockId }
         if (activeIdx != -1 && stateVal.blocks[activeIdx] is TextBlock) {
-            val (size, isBold, color) = when (styleName) {
-                "Title" -> Triple(24, true, Color(0xFF1E3A8A))
-                "Subtitle" -> Triple(14, false, Color(0xFF4B5563))
-                "Heading 1" -> Triple(20, true, Color(0xFF2563EB))
-                "Heading 2" -> Triple(16, true, Color(0xFF1D4ED8))
-                "Heading 3" -> Triple(14, true, Color(0xFF374151))
-                else -> Triple(12, false, Color.Black)
+            val size = when (styleName) {
+                "Title" -> 24
+                "Heading 1" -> 20
+                "Heading 2" -> 16
+                "Heading 3", "Subtitle", "Intense Quote" -> 14
+                "Footnote" -> 10
+                else -> 12
             }
-            _state.update { it.copy(fontSize = size, isBold = isBold, textColor = color) }
-            applyStyleToSelection(SpanStyle(fontSize = size.sp, fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal, color = color))
+            val isBold = when (styleName) {
+                "Title", "Heading 1", "Heading 2", "Heading 3", "Intense Emphasis", "Intense Quote", "Book Title" -> true
+                else -> false
+            }
+            val isItalic = when (styleName) {
+                "Subtitle", "Emphasis", "Intense Emphasis", "Quote", "Intense Quote", "Book Title" -> true
+                else -> false
+            }
+            val color = when (styleName) {
+                "Title" -> Color(0xFF1E3A8A)
+                "Heading 1", "Emphasis" -> Color(0xFF2563EB)
+                "Heading 2", "Intense Emphasis", "Intense Quote" -> Color(0xFF1D4ED8)
+                "Subtitle", "Quote", "Footnote" -> Color(0xFF475569)
+                "Heading 3" -> Color(0xFF374151)
+                else -> Color.Black
+            }
+            _state.update { it.copy(fontSize = size, isBold = isBold, isItalic = isItalic, textColor = color) }
+            applyStyleToSelection(
+                SpanStyle(
+                    fontSize = size.sp,
+                    fontWeight = if (isBold) FontWeight.Bold else FontWeight.Normal,
+                    fontStyle = if (isItalic) FontStyle.Italic else FontStyle.Normal,
+                    color = color
+                )
+            )
         }
     }
 
@@ -795,85 +1125,112 @@ class EditorViewModel : ViewModel() {
             val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock ?: return
             val currentText = activeBlock.text
             val totalLength = currentText.annotatedString.length
-            
-            if (currentText.selection.collapsed || totalLength == 0) {
-                // Apply to the whole block if nothing is explicitly selected
-                if (totalLength > 0) {
-                    val builder = AnnotatedString.Builder()
-                    builder.append(currentText.annotatedString.text)
-                    
-                    // Copy existing span styles with property overriding
-                    currentText.annotatedString.spanStyles.forEach { range ->
-                        val start = range.start.coerceIn(0, totalLength)
-                        val end = range.end.coerceIn(0, totalLength)
-                        if (start < end) {
-                            val updatedItem = if (spanStyle.fontFamily != null) {
-                                range.item.copy(fontFamily = spanStyle.fontFamily)
-                            } else if (spanStyle.fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) {
-                                range.item.copy(fontSize = spanStyle.fontSize)
-                            } else if (spanStyle.color != Color.Unspecified) {
-                                range.item.copy(color = spanStyle.color)
-                            } else if (spanStyle.background != Color.Unspecified) {
-                                range.item.copy(background = spanStyle.background)
-                            } else {
-                                range.item
-                            }
-                            builder.addStyle(updatedItem, start, end)
-                        }
-                    }
-                    builder.addStyle(spanStyle, 0, totalLength)
-                    
-                    val newAnnotatedString = builder.toAnnotatedString()
-                    val newBlocks = stateVal.blocks.map { 
-                        if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
-                    }
-                    _state.update { it.copy(blocks = newBlocks) }
-                }
-                return
-            }
-            
+            if (totalLength == 0) return
+
             val min = currentText.selection.min.coerceIn(0, totalLength)
             val max = currentText.selection.max.coerceIn(0, totalLength)
 
-            if (min < max) {
-                val builder = AnnotatedString.Builder()
-                builder.append(currentText.annotatedString.text)
-                
-                // Copy existing spans with property overriding for overlapping range
+            // Determine target formatting range
+            val (targetStart, targetEnd) = if (min < max) {
+                min to max
+            } else {
+                // If cursor is at a point, find the word boundary around cursor
+                val textStr = currentText.annotatedString.text
+                val cursor = min.coerceIn(0, textStr.length)
+                var wStart = cursor
+                while (wStart > 0 && !textStr[wStart - 1].isWhitespace()) {
+                    wStart--
+                }
+                var wEnd = cursor
+                while (wEnd < textStr.length && !textStr[wEnd].isWhitespace()) {
+                    wEnd++
+                }
+                if (wStart < wEnd) wStart to wEnd else 0 to totalLength
+            }
+
+            val builder = AnnotatedString.Builder()
+            builder.append(currentText.annotatedString.text)
+
+            // If no existing spans, apply directly
+            if (currentText.annotatedString.spanStyles.isEmpty()) {
+                builder.addStyle(spanStyle, targetStart, targetEnd)
+            } else {
+                // Apply the spanStyle as base for target range
+                builder.addStyle(spanStyle, targetStart, targetEnd)
+
+                // Re-apply existing spans, merging where they overlap the target range
                 currentText.annotatedString.spanStyles.forEach { range ->
-                    val start = range.start.coerceIn(0, totalLength)
-                    val end = range.end.coerceIn(0, totalLength)
-                    if (start < end) {
-                        val updatedItem = if (start < max && end > min) {
-                            if (spanStyle.fontFamily != null) {
-                                range.item.copy(fontFamily = spanStyle.fontFamily)
-                            } else if (spanStyle.fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) {
-                                range.item.copy(fontSize = spanStyle.fontSize)
-                            } else if (spanStyle.color != Color.Unspecified) {
-                                range.item.copy(color = spanStyle.color)
-                            } else if (spanStyle.background != Color.Unspecified) {
-                                range.item.copy(background = spanStyle.background)
-                            } else {
-                                range.item
-                            }
-                        } else {
-                            range.item
+                    val s = range.start.coerceIn(0, totalLength)
+                    val e = range.end.coerceIn(0, totalLength)
+                    if (s >= e) return@forEach
+
+                    if (e <= targetStart || s >= targetEnd) {
+                        // Completely outside target: keep unmodified
+                        builder.addStyle(range.item, s, e)
+                    } else {
+                        // Portion before target
+                        if (s < targetStart) {
+                            builder.addStyle(range.item, s, targetStart)
                         }
-                        builder.addStyle(updatedItem, start, end)
+                        // Portion inside target: merge attributes
+                        val insideStart = maxOf(s, targetStart)
+                        val insideEnd = minOf(e, targetEnd)
+                        if (insideStart < insideEnd) {
+                            val merged = mergeSpanStyles(range.item, spanStyle)
+                            builder.addStyle(merged, insideStart, insideEnd)
+                        }
+                        // Portion after target
+                        if (e > targetEnd) {
+                            builder.addStyle(range.item, targetEnd, e)
+                        }
                     }
                 }
-                // Apply the new targeted span style to the selected range
-                builder.addStyle(spanStyle, min, max)
-                
-                val newAnnotatedString = builder.toAnnotatedString()
-                val newBlocks = stateVal.blocks.map { 
-                    if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
-                }
-                _state.update { it.copy(blocks = newBlocks) }
             }
+
+            // Preserve paragraph styles
+            currentText.annotatedString.paragraphStyles.forEach { pRange ->
+                val ps = pRange.start.coerceIn(0, totalLength)
+                val pe = pRange.end.coerceIn(0, totalLength)
+                if (ps < pe) {
+                    builder.addStyle(pRange.item, ps, pe)
+                }
+            }
+
+            val newAnnotatedString = builder.toAnnotatedString()
+            val newBlocks = stateVal.blocks.map {
+                if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it
+            }
+            _state.update { it.copy(blocks = newBlocks) }
         } catch (e: Exception) {
             android.util.Log.e("EditorViewModel", "applyStyleToSelection caught error", e)
         }
+    }
+
+    private fun mergeSpanStyles(base: SpanStyle, override: SpanStyle): SpanStyle {
+        val newBackground = if (override.background == Color.Transparent) {
+            Color.Transparent
+        } else if (override.background != Color.Unspecified) {
+            override.background
+        } else {
+            base.background
+        }
+
+        return SpanStyle(
+            color = if (override.color != Color.Unspecified) override.color else base.color,
+            fontSize = if (override.fontSize != androidx.compose.ui.unit.TextUnit.Unspecified) override.fontSize else base.fontSize,
+            fontWeight = override.fontWeight ?: base.fontWeight,
+            fontStyle = override.fontStyle ?: base.fontStyle,
+            fontSynthesis = override.fontSynthesis ?: base.fontSynthesis,
+            fontFamily = override.fontFamily ?: base.fontFamily,
+            fontFeatureSettings = override.fontFeatureSettings ?: base.fontFeatureSettings,
+            letterSpacing = if (override.letterSpacing != androidx.compose.ui.unit.TextUnit.Unspecified) override.letterSpacing else base.letterSpacing,
+            baselineShift = override.baselineShift ?: base.baselineShift,
+            textGeometricTransform = override.textGeometricTransform ?: base.textGeometricTransform,
+            localeList = override.localeList ?: base.localeList,
+            background = newBackground,
+            textDecoration = override.textDecoration ?: base.textDecoration,
+            shadow = override.shadow ?: base.shadow
+        )
     }
 
     private fun updateActiveBlock(update: (DocumentBlock) -> DocumentBlock) {
@@ -888,11 +1245,34 @@ class EditorViewModel : ViewModel() {
         val stateVal = _state.value
         val activeBlock = stateVal.blocks.find { it.id == stateVal.activeBlockId } as? TextBlock ?: return
         val currentText = activeBlock.text
-        
-        val plainText = currentText.annotatedString.text
-        val newAnnotatedString = buildAnnotatedString {
-            append(plainText)
+        val totalLength = currentText.annotatedString.length
+        if (totalLength == 0) return
+
+        val min = currentText.selection.min.coerceIn(0, totalLength)
+        val max = currentText.selection.max.coerceIn(0, totalLength)
+
+        val newAnnotatedString = if (min < max) {
+            val builder = AnnotatedString.Builder()
+            builder.append(currentText.annotatedString.text)
+            currentText.annotatedString.spanStyles.forEach { range ->
+                val s = range.start.coerceIn(0, totalLength)
+                val e = range.end.coerceIn(0, totalLength)
+                if (s < e) {
+                    if (e <= min || s >= max) {
+                        builder.addStyle(range.item, s, e)
+                    } else {
+                        if (s < min) builder.addStyle(range.item, s, min)
+                        if (e > max) builder.addStyle(range.item, max, e)
+                    }
+                }
+            }
+            builder.toAnnotatedString()
+        } else {
+            buildAnnotatedString {
+                append(currentText.annotatedString.text)
+            }
         }
+
         val newBlocks = stateVal.blocks.map { 
             if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
         }
@@ -936,5 +1316,26 @@ class EditorViewModel : ViewModel() {
             if (it.id == activeBlock.id) activeBlock.copy(text = currentText.copy(annotatedString = newAnnotatedString)) else it 
         }
         _state.update { it.copy(numeralSystem = system, blocks = newBlocks) }
+    }
+
+    private fun sortParagraphs(ascending: Boolean) {
+        val stateVal = _state.value
+        val textBlocks = stateVal.blocks.filterIsInstance<TextBlock>()
+        if (textBlocks.size <= 1) return
+
+        val sortedTextBlocks = if (ascending) {
+            textBlocks.sortedBy { it.text.text }
+        } else {
+            textBlocks.sortedByDescending { it.text.text }
+        }
+
+        var sortedIdx = 0
+        val newBlocks = stateVal.blocks.map { block ->
+            if (block is TextBlock && sortedIdx < sortedTextBlocks.size) {
+                val nextSorted = sortedTextBlocks[sortedIdx++]
+                block.copy(text = nextSorted.text, alignment = nextSorted.alignment, lineSpacing = nextSorted.lineSpacing)
+            } else block
+        }
+        _state.update { it.copy(blocks = newBlocks) }
     }
 }

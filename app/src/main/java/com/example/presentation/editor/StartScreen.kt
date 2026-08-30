@@ -101,47 +101,58 @@ fun StartScreen(
         if (isCompact) {
             // Mobile Layout
             Column(modifier = Modifier.fillMaxSize()) {
-                // Top App Bar for Mobile
-                Row(
+                // Top App Bar for Mobile (Respects Status Bar and Cutouts)
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.primary)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Article, contentDescription = "Word", tint = Color.White, modifier = Modifier.size(28.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Word",
-                            color = Color.White,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Row {
-                        IconButton(onClick = handleLoginLogout) {
-                            Icon(
-                                imageVector = if (currentUser != null) Icons.Default.AccountCircle else Icons.Default.Login,
-                                contentDescription = "Profile",
-                                tint = Color.White
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsTopHeight(WindowInsets.statusBars)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Article, contentDescription = "Word", tint = Color.White, modifier = Modifier.size(26.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Word",
+                                color = Color.White,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
-                        IconButton(onClick = { showSettingsDialog = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings",
-                                tint = Color.White
-                            )
+                        Row {
+                            IconButton(onClick = handleLoginLogout) {
+                                Icon(
+                                    imageVector = if (currentUser != null) Icons.Default.AccountCircle else Icons.Default.Login,
+                                    contentDescription = "Profile",
+                                    tint = Color.White
+                                )
+                            }
+                            IconButton(onClick = { showSettingsDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
                 }
                 
-                // Mobile Content
+                // Mobile Content (Respects Gesture Bar / Navigation Bar)
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
+                        .navigationBarsPadding()
                         .verticalScroll(rememberScrollState())
                         .padding(16.dp)
                 ) {
@@ -158,8 +169,13 @@ fun StartScreen(
                 }
             }
         } else {
-            // Desktop/Tablet Layout (Microsoft Office Style)
-            Row(modifier = Modifier.fillMaxSize()) {
+            // Desktop/Tablet Layout (Microsoft Office Style - Respects System Bars)
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+            ) {
                 // Sidebar
                 Box(
                     modifier = Modifier

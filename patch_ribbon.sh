@@ -1,0 +1,1 @@
+sed -i -e '/fun DrawTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {/r app/src/main/java/com/example/presentation/editor/components/DrawTabContent.kt' -e '/fun DrawTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {/,/}/d' app/src/main/java/com/example/presentation/editor/components/RibbonUI.kt

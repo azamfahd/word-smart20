@@ -1,0 +1,2 @@
+sed -i '/object OnInsertSignatureLineClicked : RibbonEvent()/a \
+    \n    // Drawing Events\n    object OnToggleDrawingMode : RibbonEvent()\n    object OnToggleHighlighterMode : RibbonEvent()\n    object OnToggleEraserMode : RibbonEvent()\n    data class OnInkColorChanged(val color: Color) : RibbonEvent()\n    data class OnInkThicknessChanged(val thickness: Float) : RibbonEvent()\n    data class OnDrawPathAdded(val path: DrawingPath) : RibbonEvent()\n    object OnClearDrawing : RibbonEvent()' app/src/main/java/com/example/presentation/editor/EditorContract.kt

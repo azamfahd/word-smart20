@@ -23,6 +23,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
@@ -43,6 +47,7 @@ import com.example.presentation.editor.components.DocumentCanvas
 import com.example.presentation.editor.components.FileMenuScreen
 import com.example.presentation.editor.components.WordRibbon
 import com.example.presentation.editor.components.ComprehensiveGroupDetailsDialog
+import com.example.presentation.editor.components.DocumentTemplatesDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -143,8 +148,46 @@ fun MainScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .imePadding()
                     .background(Color(0xFFE5E9EE))
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.type == KeyEventType.KeyDown && keyEvent.isCtrlPressed) {
+                            when (keyEvent.key) {
+                                Key.C -> {
+                                    viewModel.processEvent(RibbonEvent.OnCopyClicked)
+                                    true
+                                }
+                                Key.X -> {
+                                    viewModel.processEvent(RibbonEvent.OnCutClicked)
+                                    true
+                                }
+                                Key.V -> {
+                                    viewModel.processEvent(RibbonEvent.OnPasteClicked)
+                                    true
+                                }
+                                Key.B -> {
+                                    viewModel.processEvent(RibbonEvent.OnBoldClicked)
+                                    true
+                                }
+                                Key.I -> {
+                                    viewModel.processEvent(RibbonEvent.OnItalicClicked)
+                                    true
+                                }
+                                Key.U -> {
+                                    viewModel.processEvent(RibbonEvent.OnUnderlineClicked)
+                                    true
+                                }
+                                Key.Z -> {
+                                    viewModel.processEvent(RibbonEvent.OnUndoClicked)
+                                    true
+                                }
+                                Key.Y -> {
+                                    viewModel.processEvent(RibbonEvent.OnRedoClicked)
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
             ) {
                 // Desktop Ribbon UI
                 WordRibbon(
@@ -316,13 +359,79 @@ fun MainScreen(
                 DocumentCanvas(
                     state = state,
                     onEvent = { viewModel.processEvent(it) },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .imePadding()
                 )
 
                 // Dedicated Office Status Bar (شريط الحالة العُلوِي/السُفلي المخصص)
                 EditorStatusBar(
                     state = state,
                     onEvent = { viewModel.processEvent(it) }
+                )
+            }
+
+            // Check if there is active text selection
+            val activeTextBlock = state.blocks.find { b -> b.id == state.activeBlockId } as? TextBlock
+            val hasSelectedText = activeTextBlock != null && 
+                    activeTextBlock.text.selection.min != activeTextBlock.text.selection.max &&
+                    activeTextBlock.text.selection.min >= 0
+
+            // Quick Floating Toolbar for Text Actions - ONLY appears when text is selected
+            if (hasSelectedText && !state.isProtectedView && !state.isFileMenuOpen) {
+                QuickFormattingFloatingBar(
+                    state = state,
+                    onEvent = { 
+                        if (it is RibbonEvent.OnCopyClicked) {
+                            val activeBlock = state.blocks.find { b -> b.id == state.activeBlockId } as? TextBlock
+                            if (activeBlock != null) {
+                                val textVal = activeBlock.text
+                                val min = textVal.selection.min.coerceIn(0, textVal.annotatedString.length)
+                                val max = textVal.selection.max.coerceIn(0, textVal.annotatedString.length)
+                                val textToCopy = if (min < max) {
+                                    textVal.annotatedString.subSequence(min, max).text
+                                } else {
+                                    textVal.annotatedString.text
+                                }
+                                if (textToCopy.isNotEmpty()) {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Copied Text", textToCopy)
+                                    clipboard?.setPrimaryClip(clip)
+                                }
+                            }
+                        } else if (it is RibbonEvent.OnCutClicked) {
+                            val activeBlock = state.blocks.find { b -> b.id == state.activeBlockId } as? TextBlock
+                            if (activeBlock != null) {
+                                val textVal = activeBlock.text
+                                val min = textVal.selection.min.coerceIn(0, textVal.annotatedString.length)
+                                val max = textVal.selection.max.coerceIn(0, textVal.annotatedString.length)
+                                val textToCopy = if (min < max) {
+                                    textVal.annotatedString.subSequence(min, max).text
+                                } else {
+                                    textVal.annotatedString.text
+                                }
+                                if (textToCopy.isNotEmpty()) {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Cut Text", textToCopy)
+                                    clipboard?.setPrimaryClip(clip)
+                                    viewModel.processEvent(RibbonEvent.OnCutTextFromSelection)
+                                }
+                            }
+                        } else if (it is RibbonEvent.OnPasteClicked) {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                            val clipItem = clipboard?.primaryClip?.getItemAt(0)
+                            val textToPaste = clipItem?.text?.toString() ?: ""
+                            if (textToPaste.isNotEmpty()) {
+                                viewModel.processEvent(RibbonEvent.OnPasteTextAtSelection(textToPaste))
+                            }
+                        } else {
+                            viewModel.processEvent(it)
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 36.dp)
+                        .imePadding()
                 )
             }
             
@@ -391,6 +500,16 @@ fun MainScreen(
                 )
             }
 
+            if (state.showTemplatesDialog) {
+                DocumentTemplatesDialog(
+                    state = state,
+                    onDismiss = { viewModel.processEvent(RibbonEvent.OnDismissTemplatesDialog) },
+                    onSelectTemplate = { templateId ->
+                        viewModel.processEvent(RibbonEvent.OnApplyDocumentTemplate(templateId))
+                    }
+                )
+            }
+
             state.activeGroupDetailsDialog?.let { groupName ->
                 ComprehensiveGroupDetailsDialog(
                     groupName = groupName,
@@ -440,247 +559,322 @@ fun EditorStatusBar(
 ) {
     var showZoomDropdown by remember { mutableStateOf(false) }
 
+    val totalWords = remember(state.blocks) {
+        state.blocks.filterIsInstance<TextBlock>().sumOf { block ->
+            val txt = block.text.text.trim()
+            if (txt.isEmpty()) 0 else txt.split(Regex("\\s+")).filter { it.isNotBlank() }.size
+        }
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(34.dp),
+            .navigationBarsPadding(),
         color = Color(0xFFF1F5F9), // Light Office Slate Gray
         tonalElevation = 2.dp,
         shadowElevation = 1.dp
     ) {
-        Row(
+        BoxWithConstraints(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .fillMaxWidth()
+                .height(34.dp)
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // Document Stats & Info (Left section)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(4.dp)
-                ) {
-                    Text(
-                        text = if (state.isRtl) "صفحة 1 | ${state.pageSize.name}" else "Page 1 | ${state.pageSize.name}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
+            val isCompact = maxWidth < 560.dp
+            val isNarrow = maxWidth < 400.dp
 
-                Surface(
-                    color = Color(0xFFE2E8F0),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.clickable { showZoomDropdown = true }
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Document Stats & Info (Left section - MS Word Style)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    // 1. Page Number Indicator
+                    Surface(
+                        color = Color.Transparent,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.clickable { onEvent(RibbonEvent.OnShowWordCountClicked) }
                     ) {
                         Text(
-                            text = if (state.isRtl) "عرض الجوال الذكي: ${(state.zoomScale * 100).toInt()}%" else "Smart Mobile Zoom: ${(state.zoomScale * 100).toInt()}%",
+                            text = if (isNarrow) "صفحة 1" else if (state.isRtl) "صفحة 1 من 1" else "Page 1 of 1",
                             fontSize = 11.sp,
-                            color = Color(0xFF0F172A),
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF334155),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                         )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Zoom Presets",
-                            tint = Color(0xFF475569),
-                            modifier = Modifier.size(16.dp)
-                        )
+                    }
+
+                    Text(text = "•", fontSize = 10.sp, color = Color(0xFF94A3B8))
+
+                    // 2. Word Count Indicator (Live word count!)
+                    Surface(
+                        color = Color.Transparent,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.clickable { onEvent(RibbonEvent.OnShowWordCountClicked) }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Analytics,
+                                contentDescription = null,
+                                tint = Color(0xFF64748B),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = if (state.isRtl) "$totalWords كلمة" else "$totalWords words",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF334155)
+                            )
+                        }
+                    }
+
+                    if (!isNarrow) {
+                        Text(text = "•", fontSize = 10.sp, color = Color(0xFF94A3B8))
+
+                        // 3. Language & Spell Check Indicator
+                        Surface(
+                            color = Color.Transparent,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.clickable { onEvent(RibbonEvent.OnLanguageToggled) }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Spellcheck,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = if (state.isRtl) "العربية (اليمن)" else "English (US)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF334155)
+                                )
+                            }
+                        }
+                    }
+
+                    // 4. Protected View Indicator Badge
+                    if (state.isProtectedView || state.viewMode == ViewMode.READ_MODE) {
+                        Surface(
+                            color = Color(0xFFFEF3C7),
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.clickable {
+                                onEvent(RibbonEvent.OnViewModeChanged(ViewMode.PRINT_LAYOUT))
+                            }
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = Color(0xFFD97706),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                Text(
+                                    text = if (state.isRtl) "عرض محمي" else "Protected",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF92400E)
+                                )
+                            }
+                        }
                     }
                 }
 
-                DropdownMenu(
-                    expanded = showZoomDropdown,
-                    onDismissRequest = { showZoomDropdown = false }
+                // Dedicated Zoom & View Mode Controls (Right section - Exact MS Word Layout)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    text = if (state.isRtl) "📱 تكبير الجوال الذكي (130%)" else "📱 Smart Mobile Zoom (130%)",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = if (state.isRtl) "عرض مريح للعين على الهاتف مع حفظ خط Windows الأصلي (12pt)" else "Comfortable phone reading with original Windows font size (12pt)",
-                                    fontSize = 10.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        },
-                        onClick = {
-                            onEvent(RibbonEvent.OnZoomChanged(1.30f))
-                            showZoomDropdown = false
+                    // View Mode Shortcuts (Read Mode 📖 | Print Layout 📄 | Web Layout 🌐)
+                    IconButton(
+                        onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.READ_MODE)) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = if (state.isRtl) "وضع القراءة" else "Read Mode",
+                            tint = if (state.viewMode == ViewMode.READ_MODE) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.PRINT_LAYOUT)) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = if (state.isRtl) "تخطيط الطباعة" else "Print Layout",
+                            tint = if (state.viewMode == ViewMode.PRINT_LAYOUT && !state.isProtectedView) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT)) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Language,
+                            contentDescription = if (state.isRtl) "تخطيط الويب" else "Web Layout",
+                            tint = if (state.viewMode == ViewMode.WEB_LAYOUT) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    // Zoom Out (-)
+                    IconButton(
+                        onClick = { onEvent(RibbonEvent.OnZoomChanged(state.zoomScale - 0.10f)) },
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Remove,
+                            contentDescription = "Zoom Out",
+                            tint = Color(0xFF334155),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // Interactive Zoom Slider (- [────●────] +)
+                    if (!isCompact) {
+                        Slider(
+                            value = state.zoomScale,
+                            onValueChange = { onEvent(RibbonEvent.OnZoomChanged(it)) },
+                            valueRange = 0.5f..2.0f,
+                            modifier = Modifier
+                                .width(70.dp)
+                                .height(20.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF2563EB),
+                                activeTrackColor = Color(0xFF3B82F6),
+                                inactiveTrackColor = Color(0xFFCBD5E1)
+                            )
+                        )
+                    }
+
+                    // Zoom In (+)
+                    IconButton(
+                        onClick = { onEvent(RibbonEvent.OnZoomChanged(state.zoomScale + 0.10f)) },
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Zoom In",
+                            tint = Color(0xFF334155),
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
+                    // Zoom Percentage Button
+                    Surface(
+                        color = Color(0xFFE2E8F0),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.clickable { showZoomDropdown = true }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "${(state.zoomScale * 100).toInt()}%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Zoom Presets",
+                                tint = Color(0xFF475569),
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    text = if (state.isRtl) "📱 تكبير قراءة محدد (150%)" else "📱 Comfortable Reading Zoom (150%)",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = if (state.isRtl) "تكبير واضح جداً للشاشات الصغيرة" else "Extra clear for smaller phone displays",
-                                    fontSize = 10.sp,
-                                    color = Color.Gray
-                                )
+                    }
+
+                    DropdownMenu(
+                        expanded = showZoomDropdown,
+                        onDismissRequest = { showZoomDropdown = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (state.isRtl) "🖥️ حجم الويندوز الأصلي (100%)" else "🖥️ Original Windows Size (100%)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "معاينة المستند بالحجم الأصلي القياسي 1:1" else "Exact 1:1 standard size",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnZoomChanged(1.0f))
+                                showZoomDropdown = false
                             }
-                        },
-                        onClick = {
-                            onEvent(RibbonEvent.OnZoomChanged(1.50f))
-                            showZoomDropdown = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    text = if (state.isRtl) "🖥️ حجم الويندوز الأصلي (100%)" else "🖥️ Original Windows Size (100%)",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = if (state.isRtl) "معاينة الطباعة والمستند بالحجم الأصلي 1:1" else "Exact 1:1 print preview size",
-                                    fontSize = 10.sp,
-                                    color = Color.Gray
-                                )
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (state.isRtl) "📱 تكبير الجوال الذكي (130%)" else "📱 Smart Mobile Zoom (130%)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "عرض مريح للعين على شاشة الهاتف" else "Comfortable phone reading",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnZoomChanged(1.30f))
+                                showZoomDropdown = false
                             }
-                        },
-                        onClick = {
-                            onEvent(RibbonEvent.OnZoomChanged(1.0f))
-                            showZoomDropdown = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    text = if (state.isRtl) "📖 عرض الجوال المرن (Web Reflow)" else "📖 Mobile Reflow View",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    text = if (state.isRtl) "إعادة تشكيل النصوص تلقائياً لشاشة الهاتف بدون حواف" else "Continuous text reflow for small screens",
-                                    fontSize = 10.sp,
-                                    color = Color.Gray
-                                )
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (state.isRtl) "🔍 تكبير للقراءة المكثفة (150%)" else "🔍 Large Reading Zoom (150%)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "تكبير عالي للخطوط الصغيرة" else "Extra clear for smaller fonts",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnZoomChanged(1.50f))
+                                showZoomDropdown = false
                             }
-                        },
-                        onClick = {
-                            onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT))
-                            showZoomDropdown = false
-                        }
-                    )
-                }
-            }
-
-            // Dedicated Zoom & View Mode Controls (Right section)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // View Mode Quick Toggles (Windows Office Style)
-                IconButton(
-                    onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.PRINT_LAYOUT)) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ViewAgenda,
-                        contentDescription = "Print Layout",
-                        tint = if (state.viewMode == ViewMode.PRINT_LAYOUT) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT)) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Language,
-                        contentDescription = "Web Layout",
-                        tint = if (state.viewMode == ViewMode.WEB_LAYOUT) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.READ_MODE)) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MenuBook,
-                        contentDescription = "Read Mode",
-                        tint = if (state.viewMode == ViewMode.READ_MODE) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                IconButton(
-                    onClick = { onEvent(RibbonEvent.OnZoomChanged(state.zoomScale - 0.15f)) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Remove,
-                        contentDescription = "Zoom Out",
-                        tint = Color(0xFF334155),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-
-                Text(
-                    text = "${(state.zoomScale * 100).toInt()}%",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1E293B),
-                    modifier = Modifier
-                        .clickable { showZoomDropdown = true }
-                        .padding(horizontal = 2.dp)
-                )
-
-                IconButton(
-                    onClick = { onEvent(RibbonEvent.OnZoomChanged(state.zoomScale + 0.15f)) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Zoom In",
-                        tint = Color(0xFF334155),
-                        modifier = Modifier.size(15.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(4.dp))
-
-                OutlinedButton(
-                    onClick = { onEvent(RibbonEvent.OnZoomChanged(1.30f)) },
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    modifier = Modifier.height(22.dp),
-                    shape = RoundedCornerShape(11.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FitScreen,
-                        contentDescription = "Smart Mobile Zoom",
-                        modifier = Modifier.size(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = "Smart",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -964,7 +1158,6 @@ private fun LegacyOldDetailsDialog(
                                     Column(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .verticalScroll(rememberScrollState())
                                     ) {
                                         allFonts.forEach { fontItem ->
                                             val isSelected = state.fontFamily.equals(fontItem.name, ignoreCase = true)
@@ -1948,5 +2141,151 @@ private fun LegacyOldDetailsDialog(
             }
         }
     )
+}
+
+@Composable
+fun QuickFormattingFloatingBar(
+    state: EditorState,
+    onEvent: (RibbonEvent) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .padding(horizontal = 16.dp)
+            .shadow(12.dp, RoundedCornerShape(24.dp))
+            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(24.dp)),
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White.copy(alpha = 0.96f)
+    ) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Copy (نسخ)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnCopyClicked) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = "نسخ (Ctrl+C)", tint = Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            // Cut (قص)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnCutClicked) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.ContentCut, contentDescription = "قص (Ctrl+X)", tint = Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            // Paste (لصق)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnPasteClicked) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.ContentPaste, contentDescription = "لصق (Ctrl+V)", tint = Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            Divider(modifier = Modifier.height(20.dp).width(1.dp), color = Color(0xFFE2E8F0))
+
+            // Bold (غامق)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnBoldClicked) },
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(if (state.isBold) Color(0xFFDBEAFE) else Color.Transparent, RoundedCornerShape(6.dp))
+            ) {
+                Icon(Icons.Default.FormatBold, contentDescription = "غامق", tint = if (state.isBold) Color(0xFF1D4ED8) else Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            // Italic (مائل)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnItalicClicked) },
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(if (state.isItalic) Color(0xFFDBEAFE) else Color.Transparent, RoundedCornerShape(6.dp))
+            ) {
+                Icon(Icons.Default.FormatItalic, contentDescription = "مائل", tint = if (state.isItalic) Color(0xFF1D4ED8) else Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            // Underline (مسطر)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnUnderlineClicked) },
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(if (state.isUnderline) Color(0xFFDBEAFE) else Color.Transparent, RoundedCornerShape(6.dp))
+            ) {
+                Icon(Icons.Default.FormatUnderlined, contentDescription = "تحته خط", tint = if (state.isUnderline) Color(0xFF1D4ED8) else Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            Divider(modifier = Modifier.height(20.dp).width(1.dp), color = Color(0xFFE2E8F0))
+
+            // Bullets (نقاط)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnBulletedListToggled) },
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(if (state.isBulletedList) Color(0xFFDBEAFE) else Color.Transparent, RoundedCornerShape(6.dp))
+            ) {
+                Icon(Icons.Default.FormatListBulleted, contentDescription = "قائمة نقطية", tint = if (state.isBulletedList) Color(0xFF1D4ED8) else Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            // Numbered (أرقام)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnNumberedListToggled) },
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(if (state.isNumberedList) Color(0xFFDBEAFE) else Color.Transparent, RoundedCornerShape(6.dp))
+            ) {
+                Icon(Icons.Default.FormatListNumbered, contentDescription = "قائمة مرقمة", tint = if (state.isNumberedList) Color(0xFF1D4ED8) else Color(0xFF334155), modifier = Modifier.size(18.dp))
+            }
+
+            Divider(modifier = Modifier.height(20.dp).width(1.dp), color = Color(0xFFE2E8F0))
+
+            // Text Color Red (لون أحمر)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnTextColorChanged(Color(0xFFDC2626))) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(modifier = Modifier.size(16.dp).background(Color(0xFFDC2626), CircleShape))
+            }
+
+            // Text Color Blue (لون أزرق)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnTextColorChanged(Color(0xFF2563EB))) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(modifier = Modifier.size(16.dp).background(Color(0xFF2563EB), CircleShape))
+            }
+
+            // Text Color Reset/Dark (لون افتراضي)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnTextColorChanged(Color(0xFF1E293B))) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(modifier = Modifier.size(16.dp).background(Color(0xFF1E293B), CircleShape))
+            }
+
+            Divider(modifier = Modifier.height(20.dp).width(1.dp), color = Color(0xFFE2E8F0))
+
+            // Add Block (إضافة فقرة)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnAddParagraphAfter(state.activeBlockId ?: "")) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "إضافة فقرة جديدة", tint = Color(0xFF16A34A), modifier = Modifier.size(20.dp))
+            }
+
+            // Delete Block (حذف الفقرة)
+            IconButton(
+                onClick = { onEvent(RibbonEvent.OnDeleteBlock(state.activeBlockId ?: "")) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "حذف الفقرة الحالية", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
+            }
+        }
+    }
 }
 
