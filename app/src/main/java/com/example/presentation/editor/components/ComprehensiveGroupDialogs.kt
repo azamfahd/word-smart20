@@ -172,7 +172,7 @@ fun ComprehensiveGroupDetailsDialog(
                                     "Font" -> Icons.Default.FormatSize
                                     "Paragraph" -> Icons.AutoMirrored.Filled.FormatAlignLeft
                                     "Clipboard" -> Icons.Default.ContentPaste
-                                    "Undo" -> Icons.Default.Undo
+                                    "Undo" -> Icons.AutoMirrored.Filled.Undo
                                     "Styles" -> Icons.Default.Title
                                     "Editing" -> Icons.Default.FindReplace
                                     "Pages" -> Icons.Default.InsertPageBreak
@@ -1718,7 +1718,7 @@ fun DocumentTemplatesDialog(
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
-                Divider(color = Color(0xFFE2E8F0))
+                HorizontalDivider(color = Color(0xFFE2E8F0))
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Template Cards Grid

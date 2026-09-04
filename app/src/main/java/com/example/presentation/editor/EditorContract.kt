@@ -15,6 +15,7 @@ data class DrawingPath(
 data class EditorState(
     // Core Document Engine (Block-based for Compose & OOXML compatibility)
     val blocks: List<DocumentBlock> = DocumentFactory.createComprehensiveTestDocument(),
+    val originalDocxBytes: ByteArray? = null,
     val drawingPaths: List<DrawingPath> = emptyList(),
     val isDrawingMode: Boolean = false,
     val inkColor: Color = Color.Black,
@@ -22,6 +23,7 @@ data class EditorState(
     val isHighlighterMode: Boolean = false,
     val isEraserMode: Boolean = false,
     val activeBlockId: String = blocks.firstOrNull()?.id ?: "blk_initial",
+    val activeTableCellId: String? = null,
     val documentTitle: String = "مستند1",
     val currentUri: Uri? = null,
     val cloudDocId: String? = null,
@@ -80,6 +82,10 @@ data class EditorState(
     val pageSize: PageSize = PageSize.A4,
     val pageOrientation: PageOrientation = PageOrientation.PORTRAIT,
     val pageMargin: PageMargin = PageMargin.NORMAL,
+    val pageColumns: PageColumns = PageColumns.ONE,
+    val showRuler: Boolean = true,
+    val firstLineIndentDp: Float = 0f,
+    val hangingIndentDp: Float = 0f,
     
     // Page Design State
     val watermarkText: String = "",
@@ -91,7 +97,7 @@ data class EditorState(
     
     // Canvas Zoom & Pan & View Customization (Windows Style)
     val zoomScale: Float = 1.0f,
-    val viewMode: ViewMode = ViewMode.PRINT_LAYOUT,
+    val viewMode: ViewMode = ViewMode.READ_MODE,
     
     // Localization & Typography
     val isRtl: Boolean = true,
@@ -112,6 +118,7 @@ data class EditorState(
 
 sealed class DocumentBlock {
     abstract val id: String
+    open val sourceElementIndex: Int? = null
 }
 
 data class TextBlock(
@@ -134,21 +141,52 @@ data class TextBlock(
     val isUnderline: Boolean = false,
     val isStrikethrough: Boolean = false,
     val textColor: Color = Color.Black,
-    val highlightColor: Color = Color.Transparent
+    val highlightColor: Color = Color.Transparent,
+    val spaceBeforePt: Float = 0f,
+    val spaceAfterPt: Float = 4f,
+    val firstLineIndentDp: Float = 0f,
+    val hangingIndentDp: Float = 0f,
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 data class TableCellModel(
     val textBlocks: List<TextBlock>,
     val backgroundColor: Color = Color.Transparent,
-    val isRtl: Boolean = false
+    val isRtl: Boolean = false,
+    val alignment: TextAlignment = TextAlignment.RIGHT,
+    val isHeader: Boolean = false,
+    val rowSpan: Int = 1,
+    val colSpan: Int = 1,
+    val isMergedCovered: Boolean = false
 )
+
+enum class TableStylePreset(val displayName: String) {
+    GRID("Grid Table"),
+    PLAIN("Plain Table"),
+    BLUE_HEADER("Header Blue Accent"),
+    DARK_MODERN("Dark Modern"),
+    MINIMAL_LINES("Minimal Lines"),
+    COLORFUL_ACCENT("Colorful Accent"),
+    WARM_ORANGE("Warm Amber"),
+    EMERALD_GREEN("Emerald List")
+}
 
 data class TableBlock(
     override val id: String,
     val rows: Int,
     val cols: Int,
     val cells: Map<String, TableCellModel>,
-    val isRtl: Boolean = false
+    val isRtl: Boolean = false,
+    val colWidthRatios: List<Float> = emptyList(),
+    val tableStyle: TableStylePreset = TableStylePreset.GRID,
+    val borderColor: Color = Color(0xFFCBD5E1),
+    val borderWidth: Float = 1f,
+    val headerBackgroundColor: Color = Color(0xFF185ABD),
+    val headerTextColor: Color = Color.White,
+    val alternatingRowColor: Color? = Color(0xFFF8FAFC),
+    val hasHeaderRow: Boolean = true,
+    val hasBandedRows: Boolean = true,
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 data class ImageBlock(
@@ -157,7 +195,9 @@ data class ImageBlock(
     val width: Float = 0f,
     val height: Float = 0f,
     val uri: String = "",
-    val wrapMode: WrapMode = WrapMode.IN_LINE
+    val wrapMode: WrapMode = WrapMode.IN_LINE,
+    val alignment: TextAlignment = TextAlignment.CENTER,
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock() {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -178,15 +218,41 @@ data class ImageBlock(
     }
 }
 
+enum class ShapeType {
+    RECTANGLE,
+    ROUNDED_RECTANGLE,
+    OVAL,
+    ARROW_RIGHT,
+    ARROW_LEFT,
+    ARROW_DOUBLE,
+    LINE,
+    STAR,
+    TRIANGLE,
+    DIAMOND,
+    SPEECH_BUBBLE,
+    HEART,
+    CLOUD,
+    BANNER,
+    ARROW
+}
+
 data class ShapeBlock(
     override val id: String,
     val type: ShapeType,
-    val strokeColor: Color = Color.Black,
-    val fillColor: Color = Color(0xFFE2E8F0)
+    val strokeColor: Color = Color(0xFF185ABD),
+    val strokeWidth: Float = 2f,
+    val fillColor: Color = Color(0xFFEFF6FF),
+    val width: Float = 0f,
+    val height: Float = 110f,
+    val text: String = "",
+    val textColor: Color = Color(0xFF1E293B),
+    val fontSize: Int = 14,
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 data class PageBreakBlock(
-    override val id: String
+    override val id: String,
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 data class BannerBlock(
@@ -195,7 +261,8 @@ data class BannerBlock(
     val subtitle: String = "",
     val backgroundColor: Color = Color(0xFF1E3A8A),
     val textColor: Color = Color.White,
-    val alignment: TextAlignment = TextAlignment.RIGHT
+    val alignment: TextAlignment = TextAlignment.RIGHT,
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 data class CalloutBlock(
@@ -204,14 +271,23 @@ data class CalloutBlock(
     val title: String = "",
     val backgroundColor: Color = Color(0xFFF1F5F9),
     val borderColor: Color = Color(0xFF3B82F6),
-    val textColor: Color = Color(0xFF1E293B)
+    val textColor: Color = Color(0xFF1E293B),
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 data class DividerBlock(
     override val id: String,
     val color: Color = Color(0xFFCBD5E1),
     val thicknessDp: Float = 1.5f,
-    val paddingVerticalDp: Float = 8f
+    val paddingVerticalDp: Float = 8f,
+    override val sourceElementIndex: Int? = null
+) : DocumentBlock()
+
+data class UnsupportedBlock(
+    override val id: String,
+    val description: String = "عنصر مدمج (معادلة / رسم / محتوى غير مدعوم)",
+    val rawXml: String = "",
+    override val sourceElementIndex: Int? = null
 ) : DocumentBlock()
 
 enum class PageStripeStyle {
@@ -225,7 +301,6 @@ enum class PageStripeStyle {
 }
 
 enum class WrapMode { IN_LINE, SQUARE, TIGHT, BEHIND, IN_FRONT }
-enum class ShapeType { RECTANGLE, OVAL, ARROW, LINE, STAR }
 
 enum class RibbonTab(val title: String) {
     FILE("File"), 
@@ -292,6 +367,7 @@ enum class ViewMode { PRINT_LAYOUT, WEB_LAYOUT, READ_MODE }
 enum class PageSize { A4, A3, LETTER, LEGAL, A5 }
 enum class PageOrientation { PORTRAIT, LANDSCAPE }
 enum class PageMargin { NORMAL, NARROW, MODERATE, WIDE }
+enum class PageColumns { ONE, TWO, THREE, LEFT_UNEQUAL, RIGHT_UNEQUAL }
 
 enum class BorderStyle { NONE, SOLID, DASHED, DOTTED, DOUBLE }
 enum class BorderSetting { NONE, BOX, SHADOW }
@@ -345,8 +421,31 @@ sealed class RibbonEvent {
     object OnInsertPageBreakClicked : RibbonEvent()
     object OnInsertPageNumberClicked : RibbonEvent()
     
-    // Table Interaction
+    // Table Interaction & Customization
     data class OnTableCellChanged(val blockId: String, val cellId: String, val text: TextFieldValue) : RibbonEvent()
+    data class OnTableCellFocused(val blockId: String, val cellId: String) : RibbonEvent()
+    data class OnMergeCells(val blockId: String) : RibbonEvent()
+    data class OnSplitCells(val blockId: String, val cellId: String) : RibbonEvent()
+    data class OnAddTableRow(val blockId: String, val atIndex: Int = -1, val above: Boolean = false) : RibbonEvent()
+    data class OnDeleteTableRow(val blockId: String, val rowIndex: Int = -1) : RibbonEvent()
+    data class OnAddTableColumn(val blockId: String, val atIndex: Int = -1, val left: Boolean = false) : RibbonEvent()
+    data class OnDeleteTableColumn(val blockId: String, val colIndex: Int = -1) : RibbonEvent()
+    data class OnDeleteTable(val blockId: String) : RibbonEvent()
+    data class OnSetTableCellBackground(val blockId: String, val cellId: String, val color: Color) : RibbonEvent()
+    data class OnSetTableStylePreset(val blockId: String, val preset: TableStylePreset) : RibbonEvent()
+    data class OnSetTableBorderColor(val blockId: String, val color: Color) : RibbonEvent()
+    data class OnToggleTableHeaderRow(val blockId: String) : RibbonEvent()
+    data class OnToggleTableBandedRows(val blockId: String) : RibbonEvent()
+    data class OnSetTableCellAlignment(val blockId: String, val cellId: String, val alignment: TextAlignment) : RibbonEvent()
+
+    // Shape Customization
+    data class OnSetShapeType(val blockId: String, val type: ShapeType) : RibbonEvent()
+    data class OnSetShapeFillColor(val blockId: String, val color: Color) : RibbonEvent()
+    data class OnSetShapeStrokeColor(val blockId: String, val color: Color) : RibbonEvent()
+    data class OnSetShapeStrokeWidth(val blockId: String, val strokeWidth: Float) : RibbonEvent()
+    data class OnSetShapeText(val blockId: String, val text: String) : RibbonEvent()
+    data class OnSetShapeTextColor(val blockId: String, val color: Color) : RibbonEvent()
+    data class OnSetShapeHeight(val blockId: String, val height: Float) : RibbonEvent()
     
     // Clipboard
     object OnCutClicked : RibbonEvent()
@@ -379,6 +478,7 @@ sealed class RibbonEvent {
     object OnIncreaseIndentClicked : RibbonEvent()
     object OnDecreaseIndentClicked : RibbonEvent()
     object OnTextDirectionToggled : RibbonEvent()
+    data class OnTextDirectionChanged(val isRtl: Boolean) : RibbonEvent()
     object OnBulletedListToggled : RibbonEvent()
     data class OnBulletShapeChanged(val shape: BulletShape) : RibbonEvent()
     object OnNumberedListToggled : RibbonEvent()
@@ -411,6 +511,10 @@ sealed class RibbonEvent {
     data class OnPageSizeChanged(val size: PageSize) : RibbonEvent()
     data class OnPageOrientationChanged(val orientation: PageOrientation) : RibbonEvent()
     data class OnPageMarginChanged(val margin: PageMargin) : RibbonEvent()
+    data class OnPageColumnsChanged(val columns: PageColumns) : RibbonEvent()
+    object OnToggleRuler : RibbonEvent()
+    data class OnFirstLineIndentChanged(val indentDp: Float) : RibbonEvent()
+    data class OnHangingIndentChanged(val indentDp: Float) : RibbonEvent()
     
     // Page Design
     data class OnWatermarkChanged(val text: String) : RibbonEvent()
@@ -441,6 +545,15 @@ sealed class RibbonEvent {
     object OnInsertDividerClicked : RibbonEvent()
     object OnInsertSignatureLineClicked : RibbonEvent()
     
+    data class OnInsertTableOfContents(val style: String = "Classic") : RibbonEvent()
+    data class OnInsertFootnote(val noteText: String, val numberingFormat: String = "1, 2, 3") : RibbonEvent()
+    data class OnInsertCitation(val author: String, val title: String, val year: String, val style: String = "APA") : RibbonEvent()
+    data class OnInsertEnvelopes(val recipientName: String, val deliveryAddress: String, val returnAddress: String, val size: String = "Size 10") : RibbonEvent()
+    data class OnApplyMailMerge(val recipients: List<MailMergeRecipient>) : RibbonEvent()
+    data class OnApplyAiResult(val newText: String, val targetBlockId: String? = null) : RibbonEvent()
+    data class OnFormatPicture(val blockId: String, val wrapMode: WrapMode) : RibbonEvent()
+    data class OnFormatShape(val blockId: String, val fillColor: Color, val strokeColor: Color) : RibbonEvent()
+
     // Drawing Events
     object OnToggleDrawingMode : RibbonEvent()
     object OnToggleHighlighterMode : RibbonEvent()

@@ -131,9 +131,12 @@ object DocumentFactory {
 
     fun createExecutiveReportTemplate(): List<DocumentBlock> {
         val cells = mutableMapOf<String, TableCellModel>()
-        cells["0_0"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(AnnotatedString("الربع السنوي", spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, 11)))), alignment = TextAlignment.CENTER)))
-        cells["0_1"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(AnnotatedString("المبيعات (USD)", spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, 14)))), alignment = TextAlignment.CENTER)))
-        cells["0_2"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(AnnotatedString("نسبة النمو", spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, 10)))), alignment = TextAlignment.CENTER)))
+        val str1 = "الربع السنوي"
+        cells["0_0"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(AnnotatedString(str1, spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, str1.length)))), alignment = TextAlignment.CENTER)))
+        val str2 = "المبيعات (USD)"
+        cells["0_1"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(AnnotatedString(str2, spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, str2.length)))), alignment = TextAlignment.CENTER)))
+        val str3 = "نسبة النمو"
+        cells["0_2"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue(AnnotatedString(str3, spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontWeight = FontWeight.Bold), 0, str3.length)))), alignment = TextAlignment.CENTER)))
         cells["1_0"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("الربع الأول Q1"), alignment = TextAlignment.CENTER)))
         cells["1_1"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("$150,000"), alignment = TextAlignment.CENTER)))
         cells["1_2"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("+12%"), alignment = TextAlignment.CENTER)))
@@ -141,14 +144,17 @@ object DocumentFactory {
         cells["2_1"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("$185,000"), alignment = TextAlignment.CENTER)))
         cells["2_2"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("+23%"), alignment = TextAlignment.CENTER)))
 
+        val title1 = "1. الملخص التنفيذي (Executive Summary)"
+        val title2 = "2. مؤشرات الأداء المالي (Financial Metrics)"
+
         return listOf(
             BannerBlock(id = "blk_${UUID.randomUUID()}", title = "التقرير التنفيذي السنوي لعام 2026", subtitle = "Annual Executive Performance Report"),
             TextBlock(
                 id = "blk_${UUID.randomUUID()}",
                 text = TextFieldValue(
                     AnnotatedString(
-                        "1. الملخص التنفيذي (Executive Summary)",
-                        spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E3A8A)), 0, 39))
+                        title1,
+                        spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E3A8A)), 0, title1.length))
                     )
                 ),
                 alignment = TextAlignment.RIGHT
@@ -162,8 +168,8 @@ object DocumentFactory {
                 id = "blk_${UUID.randomUUID()}",
                 text = TextFieldValue(
                     AnnotatedString(
-                        "2. مؤشرات الأداء المالي (Financial Metrics)",
-                        spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E3A8A)), 0, 42))
+                        title2,
+                        spanStyles = listOf(AnnotatedString.Range(SpanStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E3A8A)), 0, title2.length))
                     )
                 ),
                 alignment = TextAlignment.RIGHT
@@ -232,14 +238,15 @@ object DocumentFactory {
         cells["1_0"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("أحمد"), alignment = TextAlignment.CENTER)))
         cells["1_1"] = TableCellModel(listOf(TextBlock("blk_${UUID.randomUUID()}", TextFieldValue("30"), alignment = TextAlignment.CENTER)))
 
+        val compTitle = "مستند الاختبار الشامل - Comprehensive Test"
         return listOf(
             TextBlock(
                 id = "blk_${UUID.randomUUID()}",
                 text = TextFieldValue(
                     AnnotatedString(
-                        "مستند الاختبار الشامل - Comprehensive Test",
+                        compTitle,
                         spanStyles = listOf(
-                            AnnotatedString.Range(SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF185ABD)), 0, 42)
+                            AnnotatedString.Range(SpanStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF185ABD)), 0, compTitle.length)
                         )
                     )
                 ),

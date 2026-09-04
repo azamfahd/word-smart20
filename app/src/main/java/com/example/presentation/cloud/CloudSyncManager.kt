@@ -23,13 +23,12 @@ class CloudSyncManager {
         }
     }
 
-    suspend fun saveDocument(userId: String, docId: String, title: String, docxBytes: ByteArray) {
-        val fs = firestore
-        if (fs == null) {
-            Log.w("CloudSyncManager", "Cannot save document: Firebase is not initialized")
-            return
-        }
+    companion object {
+        // Shared in-memory simulation cache for Demo/Offline users
+        private val demoCloudDocsCache = mutableMapOf<String, MutableMap<String, CloudDocument>>()
+    }
 
+    suspend fun saveDocument(userId: String, docId: String, title: String, docxBytes: ByteArray) {
         val base64Data = Base64.encodeToString(docxBytes, Base64.DEFAULT)
         val cloudDoc = CloudDocument(
             id = docId,
@@ -37,6 +36,14 @@ class CloudSyncManager {
             lastModified = Date().time,
             dataBase64 = base64Data
         )
+
+        val fs = firestore
+        if (fs == null || userId == "demo_offline_user_99") {
+            val userDocs = demoCloudDocsCache.getOrPut(userId) { mutableMapOf() }
+            userDocs[docId] = cloudDoc
+            Log.d("CloudSync", "Saved document to local simulated cloud")
+            return
+        }
         
         try {
             fs.collection("users").document(userId).collection("documents").document(docId)
@@ -50,9 +57,8 @@ class CloudSyncManager {
 
     suspend fun getDocuments(userId: String): List<CloudDocument> {
         val fs = firestore
-        if (fs == null) {
-            Log.w("CloudSyncManager", "Cannot get documents: Firebase is not initialized")
-            return emptyList()
+        if (fs == null || userId == "demo_offline_user_99") {
+            return demoCloudDocsCache[userId]?.values?.toList() ?: emptyList()
         }
 
         return try {
@@ -67,8 +73,8 @@ class CloudSyncManager {
 
     suspend fun deleteDocument(userId: String, docId: String) {
         val fs = firestore
-        if (fs == null) {
-            Log.w("CloudSyncManager", "Cannot delete document: Firebase is not initialized")
+        if (fs == null || userId == "demo_offline_user_99") {
+            demoCloudDocsCache[userId]?.remove(docId)
             return
         }
 

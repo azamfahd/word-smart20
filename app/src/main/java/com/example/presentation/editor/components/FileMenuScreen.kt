@@ -95,7 +95,7 @@ fun FileMenuScreen(
                             )
                         }
 
-                        Divider(color = Color.White.copy(alpha = 0.2f))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
 
                         Column(
                             modifier = Modifier

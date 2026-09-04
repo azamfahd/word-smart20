@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,8 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.presentation.auth.AuthManager
+import com.example.presentation.auth.UserSession
 import com.example.presentation.templates.DocumentTemplatesRepository
 import com.example.presentation.templates.TemplateCategory
 import com.example.presentation.templates.TemplateCard
@@ -59,6 +62,7 @@ fun StartScreen(
     var isLoadingCloudDocs by remember { mutableStateOf(false) }
     var showFeedbackDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showFirebaseConfigDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentUser) {
         if (currentUser != null) {
@@ -81,7 +85,12 @@ fun StartScreen(
                     currentUser = authManager.currentUser
                     android.widget.Toast.makeText(context, "تم تسجيل الدخول بنجاح", android.widget.Toast.LENGTH_SHORT).show()
                 }.onFailure { e ->
-                    android.widget.Toast.makeText(context, e.message ?: "فشل تسجيل الدخول", android.widget.Toast.LENGTH_SHORT).show()
+                    val isFirebaseError = e.message?.contains("Firebase") == true || e.message?.contains("google-services") == true
+                    if (isFirebaseError) {
+                        showFirebaseConfigDialog = true
+                    } else {
+                        android.widget.Toast.makeText(context, e.message ?: "فشل تسجيل الدخول", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         } else {
@@ -120,7 +129,7 @@ fun StartScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Article, contentDescription = "Word", tint = Color.White, modifier = Modifier.size(26.dp))
+                            Icon(Icons.AutoMirrored.Outlined.Article, contentDescription = "Word", tint = Color.White, modifier = Modifier.size(26.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Word",
@@ -132,7 +141,7 @@ fun StartScreen(
                         Row {
                             IconButton(onClick = handleLoginLogout) {
                                 Icon(
-                                    imageVector = if (currentUser != null) Icons.Default.AccountCircle else Icons.Default.Login,
+                                    imageVector = if (currentUser != null) Icons.Default.AccountCircle else Icons.AutoMirrored.Filled.Login,
                                     contentDescription = "Profile",
                                     tint = Color.White
                                 )
@@ -256,12 +265,24 @@ fun StartScreen(
     if (showSettingsDialog) {
         SettingsDialog(onDismiss = { showSettingsDialog = false })
     }
+
+    if (showFirebaseConfigDialog) {
+        FirebaseConfigDialog(
+            onDismiss = { showFirebaseConfigDialog = false },
+            onSignInAsDemo = {
+                authManager.signInAsDemoUser()
+                currentUser = authManager.currentUser
+                showFirebaseConfigDialog = false
+                android.widget.Toast.makeText(context, "تم تسجيل الدخول كحساب تجريبي محلي", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
 }
 
 @Composable
 fun StartScreenContent(
     isCompact: Boolean,
-    currentUser: com.google.firebase.auth.FirebaseUser?,
+    currentUser: com.example.presentation.auth.UserSession?,
     isLoadingCloudDocs: Boolean,
     cloudDocs: List<com.example.presentation.cloud.CloudDocument>,
     onNewDocument: () -> Unit,
@@ -542,7 +563,7 @@ fun RecentDocumentListItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = Icons.Outlined.Article,
+            imageVector = Icons.AutoMirrored.Outlined.Article,
             contentDescription = "Document",
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(32.dp)
@@ -699,6 +720,152 @@ fun SettingsDialog(onDismiss: () -> Unit) {
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Text("موافق", color = Color.White)
+            }
+        }
+    )
+}
+
+@Composable
+fun FirebaseConfigDialog(
+    onDismiss: () -> Unit,
+    onSignInAsDemo: () -> Unit
+) {
+    var activeTab by remember { mutableStateOf(0) } // 0: Options, 1: Firebase setup steps
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CloudOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "تكوين الحساب السحابي",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Tab Headers
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { activeTab = 0 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (activeTab == 0) MaterialTheme.colorScheme.primary else Color(0xFFE2E8F0),
+                            contentColor = if (activeTab == 0) Color.White else Color(0xFF475569)
+                        ),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp)
+                    ) {
+                        Text("الخيارات السريعة", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = { activeTab = 1 },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (activeTab == 1) MaterialTheme.colorScheme.primary else Color(0xFFE2E8F0),
+                            contentColor = if (activeTab == 1) Color.White else Color(0xFF475569)
+                        ),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp)
+                    ) {
+                        Text("خطوات التثبيت", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (activeTab == 0) {
+                    Text(
+                        text = "لم يتم العثور على ملف إعدادات Firebase الخاص بهذا التطبيق للتخزين السحابي. يمكنك الاختيار بين الخيارين أدناه:",
+                        fontSize = 14.sp,
+                        color = Color(0xFF334155),
+                        lineHeight = 20.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Demo mode button
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSignInAsDemo() },
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+                        border = BorderStroke(1.dp, Color(0xFFBFDBFE))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                tint = Color(0xFF2563EB),
+                                contentDescription = null
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "تسجيل الدخول كحساب تجريبي محلي",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF1E40AF)
+                                )
+                                Text(
+                                    text = "يسمح لك باستكشاف وحفظ ملفاتك السحابية مؤقتاً في ذاكرة التطبيق دون الحاجة لـ Firebase.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF1E40AF).copy(alpha = 0.8f),
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "لتهيئة وتفعيل التخزين السحابي الفعلي في نسختك الخاصة من التطبيق، يرجى اتباع الخطوات التالية:",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B)
+                    )
+
+                    val steps = listOf(
+                        "1. اذهب إلى وحدة تحكم Firebase (firebase.google.com) وأنشئ مشروعاً جديداً.",
+                        "2. أضف تطبيق Android جديد داخل المشروع باستخدام المعرّف (Application ID) الخاص بتطبيقك.",
+                        "3. قم بتنزيل ملف الإعدادات المسمى `google-services.json`.",
+                        "4. ضع الملف الذي قمت بتنزيله في المجلد الرئيسي لموديول التطبيق بالمسار التالي: `/app/google-services.json`.",
+                        "5. أعد تصدير وبناء التطبيق لتفعيل الحفظ والاتصال بقاعدة بيانات السحابية مباشرة!"
+                    )
+
+                    steps.forEach { step ->
+                        Text(
+                            text = step,
+                            fontSize = 12.sp,
+                            color = Color(0xFF475569),
+                            lineHeight = 18.sp,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Text("حسناً")
             }
         }
     )

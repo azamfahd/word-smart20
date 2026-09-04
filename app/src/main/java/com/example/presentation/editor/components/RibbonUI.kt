@@ -205,7 +205,6 @@ fun localize(englishText: String, isRtl: Boolean): String {
         // Picture Format Tab
         "Adjust" -> "ضبط"
         "Corrections" -> "تصحيحات"
-        "Color" -> "اللون"
         "Artistic Effects" -> "تأثيرات فنية"
         "Picture Styles" -> "أنماط الصور"
         "Picture Border" -> "حدود الصورة"
@@ -1433,8 +1432,8 @@ fun HomeTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                     }
 
                     Spacer(modifier = Modifier.width(2.dp))
-                    RibbonToggleButton(Icons.AutoMirrored.Filled.FormatTextdirectionLToR, !state.isTextRtl) { onEvent(RibbonEvent.OnTextDirectionToggled) }
-                    RibbonToggleButton(Icons.AutoMirrored.Filled.FormatTextdirectionRToL, state.isTextRtl) { onEvent(RibbonEvent.OnTextDirectionToggled) }
+                    RibbonToggleButton(Icons.AutoMirrored.Filled.FormatTextdirectionLToR, !state.isTextRtl) { onEvent(RibbonEvent.OnTextDirectionChanged(false)) }
+                    RibbonToggleButton(Icons.AutoMirrored.Filled.FormatTextdirectionRToL, state.isTextRtl) { onEvent(RibbonEvent.OnTextDirectionChanged(true)) }
                     
                     // Numeral System Toggle
                     RibbonToggleButton(
@@ -2100,6 +2099,7 @@ fun LayoutTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
     var showMarginMenu by remember { mutableStateOf(false) }
     var showOrientationMenu by remember { mutableStateOf(false) }
     var showSizeMenu by remember { mutableStateOf(false) }
+    var showColumnsMenu by remember { mutableStateOf(false) }
 
     Row(
         verticalAlignment = Alignment.CenterVertically
@@ -2152,6 +2152,35 @@ fun LayoutTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                     }
                 }
             }
+
+            Box {
+                RibbonLargeButton(Icons.Default.ViewColumn, if (state.isRtl) "الأعمدة" else "Columns") { showColumnsMenu = true }
+                DropdownMenu(expanded = showColumnsMenu, onDismissRequest = { showColumnsMenu = false }) {
+                    listOf(
+                        PageColumns.ONE to (if (state.isRtl) "عمود واحد (1 Column)" else "One Column"),
+                        PageColumns.TWO to (if (state.isRtl) "عمودان (2 Columns)" else "Two Columns"),
+                        PageColumns.THREE to (if (state.isRtl) "ثلاثة أعمدة (3 Columns)" else "Three Columns"),
+                        PageColumns.LEFT_UNEQUAL to (if (state.isRtl) "عمود أيسر ضيق (Left Narrow)" else "Left Narrow"),
+                        PageColumns.RIGHT_UNEQUAL to (if (state.isRtl) "عمود أيمن ضيق (Right Narrow)" else "Right Narrow")
+                    ).forEach { (colEnum, label) ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (state.pageColumns == colEnum) {
+                                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF185ABD))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Text(label)
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnPageColumnsChanged(colEnum))
+                                showColumnsMenu = false
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -2183,6 +2212,14 @@ fun ViewTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
                 icon = Icons.Default.MenuBook,
                 label = localize("Read Mode", state.isRtl),
                 onClick = { onEvent(RibbonEvent.OnViewModeChanged(ViewMode.READ_MODE)) }
+            )
+        }
+        VerticalDivider()
+        RibbonGroup(if (state.isRtl) "أدوات القياس" else "Show / Ruler") {
+            RibbonLargeButton(
+                icon = Icons.Default.Straighten,
+                label = if (state.isRtl) (if (state.showRuler) "إخفاء المسطرة" else "إظهار المسطرة") else (if (state.showRuler) "Hide Ruler" else "Show Ruler"),
+                onClick = { onEvent(RibbonEvent.OnToggleRuler) }
             )
         }
         VerticalDivider()
@@ -2451,154 +2488,544 @@ fun DrawTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
 
 @Composable
 fun ReferencesTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
+    var showTocDialog by remember { mutableStateOf(false) }
+    var showFootnoteDialog by remember { mutableStateOf(false) }
+    var showCitationDialog by remember { mutableStateOf(false) }
+
+    if (showTocDialog) {
+        TableOfContentsDialog(
+            state = state,
+            onDismiss = { showTocDialog = false },
+            onInsert = { style -> onEvent(RibbonEvent.OnInsertTableOfContents(style)) }
+        )
+    }
+
+    if (showFootnoteDialog) {
+        FootnotesDialog(
+            state = state,
+            onDismiss = { showFootnoteDialog = false },
+            onInsert = { text, fmt -> onEvent(RibbonEvent.OnInsertFootnote(text, fmt)) }
+        )
+    }
+
+    if (showCitationDialog) {
+        CitationsBibliographyDialog(
+            state = state,
+            onDismiss = { showCitationDialog = false },
+            onInsert = { auth, title, yr, st -> onEvent(RibbonEvent.OnInsertCitation(auth, title, yr, st)) }
+        )
+    }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         RibbonGroup(localize("Table of Contents", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.MenuBook, localize("Table of Contents", state.isRtl)) {}
+            RibbonLargeButton(Icons.AutoMirrored.Filled.MenuBook, localize("Table of Contents", state.isRtl)) {
+                showTocDialog = true
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Footnotes", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.TextFormat, localize("Insert Footnote", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.TextFormat, localize("Insert Footnote", state.isRtl)) {
+                showFootnoteDialog = true
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Citations & Bibliography", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.Source, localize("Insert Citation", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.Source, localize("Insert Citation", state.isRtl)) {
+                showCitationDialog = true
+            }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.Settings, localize("Manage Sources", state.isRtl)) {}
+                RibbonSmallButton(Icons.Default.Settings, localize("Manage Sources", state.isRtl)) {
+                    showCitationDialog = true
+                }
             }
         }
         VerticalDivider()
         RibbonGroup(localize("Captions", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.ClosedCaption, localize("Insert Caption", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.ClosedCaption, localize("Insert Caption", state.isRtl)) {
+                onEvent(RibbonEvent.OnInsertCalloutClicked(if (state.isRtl) "شكل توضيحي" else "Figure 1", if (state.isRtl) "وصف وتسمية توضيحية للشكل..." else "Caption and description for figure..."))
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Index", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.List, localize("Mark Entry", state.isRtl)) {}
+            RibbonLargeButton(Icons.AutoMirrored.Filled.List, localize("Mark Entry", state.isRtl)) {
+                showTocDialog = true
+            }
         }
     }
 }
 
 @Composable
 fun MailingsTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
+    var showEnvelopesDialog by remember { mutableStateOf(false) }
+    var showMailMergeDialog by remember { mutableStateOf(false) }
+
+    if (showEnvelopesDialog) {
+        EnvelopesLabelsDialog(
+            state = state,
+            onDismiss = { showEnvelopesDialog = false },
+            onInsert = { rec, del, send, sz -> onEvent(RibbonEvent.OnInsertEnvelopes(rec, del, send, sz)) }
+        )
+    }
+
+    if (showMailMergeDialog) {
+        MailMergeWizardDialog(
+            state = state,
+            onDismiss = { showMailMergeDialog = false },
+            onApplyMerge = { recs -> onEvent(RibbonEvent.OnApplyMailMerge(recs)) }
+        )
+    }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         RibbonGroup(localize("Create", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.Mail, localize("Envelopes", state.isRtl)) {}
-            RibbonLargeButton(Icons.Default.Label, localize("Labels", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.Mail, localize("Envelopes", state.isRtl)) {
+                showEnvelopesDialog = true
+            }
+            RibbonLargeButton(Icons.AutoMirrored.Filled.Label, localize("Labels", state.isRtl)) {
+                showEnvelopesDialog = true
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Start Mail Merge", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.People, localize("Start Mail Merge", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.People, localize("Start Mail Merge", state.isRtl)) {
+                showMailMergeDialog = true
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Write & Insert Fields", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.PostAdd, localize("Insert Merge Field", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.PostAdd, localize("Insert Merge Field", state.isRtl)) {
+                onEvent(RibbonEvent.OnInsertSymbolClicked(" «Name» "))
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Preview Results", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.Preview, localize("Preview Results", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.Preview, localize("Preview Results", state.isRtl)) {
+                showMailMergeDialog = true
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("Finish", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.DoneAll, localize("Finish & Merge", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.DoneAll, localize("Finish & Merge", state.isRtl)) {
+                showMailMergeDialog = true
+            }
         }
     }
 }
 
 @Composable
 fun HelpTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
+    var showHelpDialog by remember { mutableStateOf(false) }
+    var showAiAssistantDialog by remember { mutableStateOf(false) }
+
+    if (showHelpDialog) {
+        WordHelpCenterDialog(
+            state = state,
+            onDismiss = { showHelpDialog = false }
+        )
+    }
+
+    if (showAiAssistantDialog) {
+        AiDocumentAssistantDialog(
+            state = state,
+            onDismiss = { showAiAssistantDialog = false },
+            onApplyText = { newText -> onEvent(RibbonEvent.OnApplyAiResult(newText)) }
+        )
+    }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         RibbonGroup(localize("Help", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.HelpOutline, localize("Help", state.isRtl)) {}
-            RibbonLargeButton(Icons.Default.ContactSupport, localize("Contact Support", state.isRtl)) {}
-            RibbonLargeButton(Icons.Default.Feedback, localize("Feedback", state.isRtl)) {}
-            RibbonLargeButton(Icons.Default.ModelTraining, localize("Training", state.isRtl)) {}
+            RibbonLargeButton(Icons.AutoMirrored.Filled.HelpOutline, localize("Help", state.isRtl)) {
+                showHelpDialog = true
+            }
+            RibbonLargeButton(Icons.Default.ContactSupport, localize("Contact Support", state.isRtl)) {
+                showHelpDialog = true
+            }
+            RibbonLargeButton(Icons.Default.Feedback, localize("Feedback", state.isRtl)) {
+                showHelpDialog = true
+            }
+            RibbonLargeButton(Icons.Default.AutoAwesome, if (state.isRtl) "مساعد AI" else "AI Assistant") {
+                showAiAssistantDialog = true
+            }
         }
         VerticalDivider()
         RibbonGroup(localize("What's New", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.NewReleases, localize("What's New", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.NewReleases, localize("What's New", state.isRtl)) {
+                showHelpDialog = true
+            }
         }
     }
 }
 
 @Composable
 fun PictureFormatTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
+    var showWrapMenu by remember { mutableStateOf(false) }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         RibbonGroup(localize("Adjust", state.isRtl)) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.AutoFixHigh, localize("Corrections", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.Palette, localize("Color", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.Brush, localize("Artistic Effects", state.isRtl)) {}
+                RibbonSmallButton(Icons.Default.AutoFixHigh, localize("Corrections", state.isRtl)) {
+                    onEvent(RibbonEvent.OnShowGroupDetails("Picture"))
+                }
+                RibbonSmallButton(Icons.Default.Palette, localize("Color", state.isRtl)) {
+                    onEvent(RibbonEvent.OnShowGroupDetails("Picture"))
+                }
+                RibbonSmallButton(Icons.Default.Brush, localize("Artistic Effects", state.isRtl)) {
+                    onEvent(RibbonEvent.OnShowGroupDetails("Picture"))
+                }
             }
         }
         VerticalDivider()
         RibbonGroup(localize("Picture Styles", state.isRtl)) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.BorderStyle, localize("Picture Border", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.AutoFixHigh, localize("Picture Effects", state.isRtl)) {}
+                RibbonSmallButton(Icons.Default.BorderStyle, localize("Picture Border", state.isRtl)) {
+                    onEvent(RibbonEvent.OnShowGroupDetails("Picture"))
+                }
+                RibbonSmallButton(Icons.Default.AutoFixHigh, localize("Picture Effects", state.isRtl)) {
+                    onEvent(RibbonEvent.OnShowGroupDetails("Picture"))
+                }
             }
         }
         VerticalDivider()
         RibbonGroup(localize("Arrange", state.isRtl)) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.WrapText, localize("Wrap Text", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.FlipToFront, localize("Bring Forward", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.FlipToBack, localize("Send Backward", state.isRtl)) {}
+                Box {
+                    RibbonSmallButton(Icons.AutoMirrored.Filled.WrapText, localize("Wrap Text", state.isRtl)) {
+                        showWrapMenu = true
+                    }
+                    DropdownMenu(expanded = showWrapMenu, onDismissRequest = { showWrapMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(if (state.isRtl) "سطري مع النص (In Line)" else "In Line with Text") },
+                            onClick = {
+                                state.activeBlockId?.let { id -> onEvent(RibbonEvent.OnFormatPicture(id, WrapMode.IN_LINE)) }
+                                showWrapMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (state.isRtl) "مربع (Square)" else "Square") },
+                            onClick = {
+                                state.activeBlockId?.let { id -> onEvent(RibbonEvent.OnFormatPicture(id, WrapMode.SQUARE)) }
+                                showWrapMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (state.isRtl) "خلف النص (Behind Text)" else "Behind Text") },
+                            onClick = {
+                                state.activeBlockId?.let { id -> onEvent(RibbonEvent.OnFormatPicture(id, WrapMode.BEHIND)) }
+                                showWrapMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (state.isRtl) "أمام النص (In Front of Text)" else "In Front of Text") },
+                            onClick = {
+                                state.activeBlockId?.let { id -> onEvent(RibbonEvent.OnFormatPicture(id, WrapMode.IN_FRONT)) }
+                                showWrapMenu = false
+                            }
+                        )
+                    }
+                }
+                RibbonSmallButton(Icons.Default.FlipToFront, localize("Bring Forward", state.isRtl)) {
+                    state.activeBlockId?.let { id -> onEvent(RibbonEvent.OnFormatPicture(id, WrapMode.IN_FRONT)) }
+                }
+                RibbonSmallButton(Icons.Default.FlipToBack, localize("Send Backward", state.isRtl)) {
+                    state.activeBlockId?.let { id -> onEvent(RibbonEvent.OnFormatPicture(id, WrapMode.BEHIND)) }
+                }
             }
         }
         VerticalDivider()
         RibbonGroup(localize("Size", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.Crop, localize("Crop", state.isRtl)) {}
+            RibbonLargeButton(Icons.Default.Crop, localize("Crop", state.isRtl)) {
+                onEvent(RibbonEvent.OnShowGroupDetails("Picture"))
+            }
         }
     }
 }
 
 @Composable
 fun TableDesignTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RibbonGroup(localize("Table Style Options", state.isRtl)) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.ViewStream, localize("Header Row", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.Functions, localize("Total Row", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.ViewAgenda, localize("Banded Rows", state.isRtl)) {}
+    val activeTable = state.blocks.find { it.id == state.activeBlockId } as? TableBlock
+    val tableId = activeTable?.id ?: state.blocks.filterIsInstance<TableBlock>().firstOrNull()?.id
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Table Style Presets
+        RibbonGroup(localize("أنماط الجداول", state.isRtl)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    Triple(TableStylePreset.BLUE_HEADER, Color(0xFF185ABD), "أزرق"),
+                    Triple(TableStylePreset.DARK_MODERN, Color(0xFF1E293B), "عصري"),
+                    Triple(TableStylePreset.EMERALD_GREEN, Color(0xFF059669), "زمردي"),
+                    Triple(TableStylePreset.WARM_ORANGE, Color(0xFFD97706), "برتقالي"),
+                    Triple(TableStylePreset.GRID, Color(0xFF64748B), "شبكة"),
+                    Triple(TableStylePreset.PLAIN, Color(0xFFCBD5E1), "بسيط")
+                ).forEach { (preset, color, name) ->
+                    val isCurrent = activeTable?.tableStyle == preset
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = color.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(
+                            if (isCurrent) 2.dp else 1.dp,
+                            if (isCurrent) color else Color.LightGray
+                        ),
+                        modifier = Modifier
+                            .clickable {
+                                tableId?.let { onEvent(RibbonEvent.OnSetTableStylePreset(it, preset)) }
+                            }
+                            .padding(2.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(16.dp, 10.dp)
+                                    .background(color, RoundedCornerShape(2.dp))
+                            )
+                            Text(
+                                text = name,
+                                fontSize = 8.sp,
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                                color = Color(0xFF1E293B)
+                            )
+                        }
+                    }
+                }
             }
         }
+
         VerticalDivider()
-        RibbonGroup(localize("Table Styles", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.FormatColorFill, localize("Shading", state.isRtl)) {}
+
+        // Rows & Columns management
+        RibbonGroup(localize("الصفوف والأعمدة", state.isRtl)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    RibbonSmallButton(Icons.Default.Add, localize("+ صف أسفل", state.isRtl)) {
+                        tableId?.let { onEvent(RibbonEvent.OnAddTableRow(it, atIndex = -1, above = false)) }
+                    }
+                    RibbonSmallButton(Icons.Default.Remove, localize("حذف صف", state.isRtl)) {
+                        tableId?.let { onEvent(RibbonEvent.OnDeleteTableRow(it, rowIndex = -1)) }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    RibbonSmallButton(Icons.Default.Add, localize("+ عمود", state.isRtl)) {
+                        tableId?.let { onEvent(RibbonEvent.OnAddTableColumn(it, atIndex = -1, left = false)) }
+                    }
+                    RibbonSmallButton(Icons.Default.Remove, localize("حذف عمود", state.isRtl)) {
+                        tableId?.let { onEvent(RibbonEvent.OnDeleteTableColumn(it, colIndex = -1)) }
+                    }
+                }
+            }
         }
+
         VerticalDivider()
-        RibbonGroup(localize("Borders", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.BorderAll, localize("Borders", state.isRtl)) {}
-            RibbonLargeButton(Icons.Default.FormatPaint, localize("Border Painter", state.isRtl)) {}
+
+        // Merge & Split Cells
+        RibbonGroup(if (state.isRtl) "الدمج والتقسيم" else "Merge & Split") {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                RibbonSmallButton(Icons.Default.CallMerge, if (state.isRtl) "دمج الخلايا" else "Merge Cells") {
+                    tableId?.let { onEvent(RibbonEvent.OnMergeCells(it)) }
+                }
+                RibbonSmallButton(Icons.Default.CallSplit, if (state.isRtl) "تقسيم الخلية" else "Split Cell") {
+                    tableId?.let { tblId ->
+                        state.activeTableCellId?.let { cellId ->
+                            onEvent(RibbonEvent.OnSplitCells(tblId, cellId))
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalDivider()
+
+        // Table Options
+        RibbonGroup(localize("خيارات التنسيق", state.isRtl)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                RibbonSmallButton(
+                    Icons.Default.ViewStream,
+                    if (activeTable?.hasHeaderRow == true) localize("إلغاء رأس الجدول", state.isRtl) else localize("صف الرأس", state.isRtl)
+                ) {
+                    tableId?.let { onEvent(RibbonEvent.OnToggleTableHeaderRow(it)) }
+                }
+                RibbonSmallButton(
+                    Icons.Default.ViewAgenda,
+                    if (activeTable?.hasBandedRows == true) localize("صفوف عادية", state.isRtl) else localize("صفوف ملونة", state.isRtl)
+                ) {
+                    tableId?.let { onEvent(RibbonEvent.OnToggleTableBandedRows(it)) }
+                }
+            }
+        }
+
+        VerticalDivider()
+
+        // Shading & Borders
+        RibbonGroup(localize("التظليل والحدود", state.isRtl)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    Color(0xFFEFF6FF),
+                    Color(0xFFECFDF5),
+                    Color(0xFFFFFBEB),
+                    Color(0xFFFEF2F2),
+                    Color(0xFFF1F5F9),
+                    Color.Transparent
+                ).forEach { col ->
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clip(CircleShape)
+                            .background(if (col == Color.Transparent) Color.White else col)
+                            .border(1.dp, Color.Gray, CircleShape)
+                            .clickable {
+                                tableId?.let { onEvent(RibbonEvent.OnSetTableBorderColor(it, if (col == Color.Transparent) Color(0xFFCBD5E1) else col)) }
+                            }
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                RibbonSmallButton(Icons.Default.Delete, localize("حذف الجدول", state.isRtl)) {
+                    tableId?.let { onEvent(RibbonEvent.OnDeleteTable(it)) }
+                }
+            }
         }
     }
 }
 
 @Composable
 fun ShapeFormatTabContent(state: EditorState, onEvent: (RibbonEvent) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        RibbonGroup(localize("Insert Shapes", state.isRtl)) {
-            RibbonLargeButton(Icons.Default.Category, localize("Insert Shapes", state.isRtl)) {}
-        }
-        VerticalDivider()
-        RibbonGroup(localize("Shape Styles", state.isRtl)) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.FormatColorFill, localize("Shape Fill", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.BorderStyle, localize("Shape Outline", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.AutoFixHigh, localize("Shape Effects", state.isRtl)) {}
+    val activeShape = state.blocks.find { it.id == state.activeBlockId } as? ShapeBlock
+    val shapeId = activeShape?.id ?: state.blocks.filterIsInstance<ShapeBlock>().firstOrNull()?.id
+
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Shape Type selector
+        RibbonGroup(localize("نوع الشكل", state.isRtl)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    ShapeType.ROUNDED_RECTANGLE to "مستطيل",
+                    ShapeType.OVAL to "دائرة",
+                    ShapeType.STAR to "نجمة",
+                    ShapeType.HEART to "قلب",
+                    ShapeType.CLOUD to "سحابة",
+                    ShapeType.ARROW_RIGHT to "سهم",
+                    ShapeType.SPEECH_BUBBLE to "محادثة",
+                    ShapeType.DIAMOND to "معين"
+                ).forEach { (st, label) ->
+                    val isCurrent = activeShape?.type == st
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isCurrent) Color(0xFF185ABD).copy(alpha = 0.15f) else Color(0xFFF1F5F9),
+                        border = androidx.compose.foundation.BorderStroke(
+                            if (isCurrent) 1.5.dp else 0.5.dp,
+                            if (isCurrent) Color(0xFF185ABD) else Color.LightGray
+                        ),
+                        modifier = Modifier
+                            .clickable {
+                                shapeId?.let { onEvent(RibbonEvent.OnSetShapeType(it, st)) }
+                            }
+                            .padding(1.dp)
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 8.5.sp,
+                            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isCurrent) Color(0xFF185ABD) else Color(0xFF334155),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp)
+                        )
+                    }
+                }
             }
         }
+
         VerticalDivider()
-        RibbonGroup(localize("WordArt Styles", state.isRtl)) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.FormatColorText, localize("Text Fill", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.TextFormat, localize("Text Outline", state.isRtl)) {}
+
+        // Fill Color
+        RibbonGroup(localize("تعبئة الشكل", state.isRtl)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(
+                    Color(0xFF2563EB),
+                    Color(0xFF059669),
+                    Color(0xFFD97706),
+                    Color(0xFFDC2626),
+                    Color(0xFF7C3AED),
+                    Color(0xFF0891B2),
+                    Color(0xFF1E293B),
+                    Color(0xFFF8FAFC),
+                    Color.Transparent
+                ).forEach { col ->
+                    val isCurrent = activeShape?.fillColor == col
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(if (col == Color.Transparent) Color.White else col)
+                            .border(if (isCurrent) 2.dp else 1.dp, if (isCurrent) Color.Black else Color.LightGray, CircleShape)
+                            .clickable {
+                                shapeId?.let { onEvent(RibbonEvent.OnSetShapeFillColor(it, col)) }
+                            }
+                    )
+                }
             }
         }
+
         VerticalDivider()
-        RibbonGroup(localize("Arrange", state.isRtl)) {
+
+        // Stroke & Width
+        RibbonGroup(localize("حدود الشكل", state.isRtl)) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                RibbonSmallButton(Icons.Default.FlipToFront, localize("Bring Forward", state.isRtl)) {}
-                RibbonSmallButton(Icons.Default.FlipToBack, localize("Send Backward", state.isRtl)) {}
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf(
+                        Color(0xFF1E3A8A),
+                        Color(0xFF065F46),
+                        Color(0xFF92400E),
+                        Color(0xFF991B1B),
+                        Color(0xFF581C87),
+                        Color.Black,
+                        Color.Transparent
+                    ).forEach { col ->
+                        val isCurrent = activeShape?.strokeColor == col
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clip(CircleShape)
+                                .background(if (col == Color.Transparent) Color.White else col)
+                                .border(if (isCurrent) 2.dp else 1.dp, if (isCurrent) Color.Black else Color.LightGray, CircleShape)
+                            .clickable {
+                                shapeId?.let { onEvent(RibbonEvent.OnSetShapeStrokeColor(it, col)) }
+                            }
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    listOf(1f, 2f, 3f, 5f).forEach { width ->
+                        val isCurrent = activeShape?.strokeWidth == width
+                        Surface(
+                            shape = RoundedCornerShape(2.dp),
+                            color = if (isCurrent) Color(0xFF185ABD).copy(alpha = 0.2f) else Color(0xFFF1F5F9),
+                            modifier = Modifier.clickable {
+                                shapeId?.let { onEvent(RibbonEvent.OnSetShapeStrokeWidth(it, width)) }
+                            }
+                        ) {
+                            Text(
+                                text = "${width.toInt()}pt",
+                                fontSize = 8.sp,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                color = Color(0xFF1E293B)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalDivider()
+
+        // Height adjustment & Delete
+        RibbonGroup(localize("الحجم والإجراءات", state.isRtl)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                RibbonSmallButton(Icons.Default.Add, localize("+ الارتفاع", state.isRtl)) {
+                    activeShape?.let { shp -> onEvent(RibbonEvent.OnSetShapeHeight(shp.id, (shp.height + 25f).coerceAtMost(400f))) }
+                }
+                RibbonSmallButton(Icons.Default.Remove, localize("- الارتفاع", state.isRtl)) {
+                    activeShape?.let { shp -> onEvent(RibbonEvent.OnSetShapeHeight(shp.id, (shp.height - 25f).coerceAtLeast(40f))) }
+                }
+                RibbonSmallButton(Icons.Default.Delete, localize("حذف الشكل", state.isRtl)) {
+                    shapeId?.let { id -> onEvent(RibbonEvent.OnDeleteBlock(id)) }
+                }
             }
         }
     }

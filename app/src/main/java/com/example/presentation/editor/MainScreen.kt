@@ -818,18 +818,19 @@ fun EditorStatusBar(
                             text = {
                                 Column {
                                     Text(
-                                        text = if (state.isRtl) "🖥️ حجم الويندوز الأصلي (100%)" else "🖥️ Original Windows Size (100%)",
+                                        text = if (state.isRtl) "🖥️ تخطيط الطباعة / حجم الويندوز (100%)" else "🖥️ Print Layout / Windows Size (100%)",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
                                     Text(
-                                        text = if (state.isRtl) "معاينة المستند بالحجم الأصلي القياسي 1:1" else "Exact 1:1 standard size",
+                                        text = if (state.isRtl) "معاينة الورقة بالحجم القياسي A4 الأصلي" else "Exact 1:1 standard A4 page layout",
                                         fontSize = 10.sp,
                                         color = Color.Gray
                                     )
                                 }
                             },
                             onClick = {
+                                onEvent(RibbonEvent.OnViewModeChanged(ViewMode.PRINT_LAYOUT))
                                 onEvent(RibbonEvent.OnZoomChanged(1.0f))
                                 showZoomDropdown = false
                             }
@@ -838,7 +839,48 @@ fun EditorStatusBar(
                             text = {
                                 Column {
                                     Text(
-                                        text = if (state.isRtl) "📱 تكبير الجوال الذكي (130%)" else "📱 Smart Mobile Zoom (130%)",
+                                        text = if (state.isRtl) "📱 عرض الجوال الذكي (متجاوب)" else "📱 Smart Mobile View (Reflow)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "يلائم عرض شاشة الهاتف بالكامل للكتابة السلسة" else "Reflows text to phone width for easy typing",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnViewModeChanged(ViewMode.WEB_LAYOUT))
+                                showZoomDropdown = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (state.isRtl) "📖 وضع القراءة المريح للعين" else "📖 Eye-care Read Mode",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "قراءة مريحة بدون تشتيت مع التحكم بحجم الخط" else "Distraction-free reading with font controls",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnViewModeChanged(ViewMode.READ_MODE))
+                                showZoomDropdown = false
+                            }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (state.isRtl) "🔍 تكبير مريح للجوال (130%)" else "🔍 Comfortable Zoom (130%)",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -858,12 +900,12 @@ fun EditorStatusBar(
                             text = {
                                 Column {
                                     Text(
-                                        text = if (state.isRtl) "🔍 تكبير للقراءة المكثفة (150%)" else "🔍 Large Reading Zoom (150%)",
+                                        text = if (state.isRtl) "🔎 تكبير للقراءة المكثفة (150%)" else "🔎 Large Reading Zoom (150%)",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
                                     Text(
-                                        text = if (state.isRtl) "تكبير عالي للخطوط الصغيرة" else "Extra clear for smaller fonts",
+                                        text = if (state.isRtl) "تكبير عالي للخطوط الدقيقة" else "Extra clear for smaller fonts",
                                         fontSize = 10.sp,
                                         color = Color.Gray
                                     )
@@ -871,6 +913,26 @@ fun EditorStatusBar(
                             },
                             onClick = {
                                 onEvent(RibbonEvent.OnZoomChanged(1.50f))
+                                showZoomDropdown = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        text = if (state.isRtl) "🔬 تكبير التفاصيل (200%)" else "🔬 Detail Zoom (200%)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (state.isRtl) "تكبير فائق للجداول والرسومات" else "Super zoom for tables and shapes",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onEvent(RibbonEvent.OnZoomChanged(2.0f))
                                 showZoomDropdown = false
                             }
                         )

@@ -1,1 +1,0 @@
-sed -i 's/data class EditorState(/data class DrawingPath(\n    val path: androidx.compose.ui.graphics.Path,\n    val color: Color,\n    val strokeWidth: Float,\n    val isHighlighter: Boolean = false\n)\n\ndata class EditorState(/' app/src/main/java/com/example/presentation/editor/EditorContract.kt

@@ -15,6 +15,13 @@ import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
 import java.util.UUID
 
+data class UserSession(
+    val uid: String,
+    val displayName: String?,
+    val email: String?,
+    val isDemo: Boolean = false
+)
+
 class AuthManager(private val context: Context) {
     private val auth: FirebaseAuth? = try {
         FirebaseAuth.getInstance()
@@ -23,9 +30,28 @@ class AuthManager(private val context: Context) {
         null
     }
     private val credentialManager = CredentialManager.create(context)
+    private var demoUser: UserSession? = null
 
-    val currentUser: FirebaseUser?
-        get() = auth?.currentUser
+    val currentUser: UserSession?
+        get() = if (auth?.currentUser != null) {
+            UserSession(
+                uid = auth.currentUser!!.uid,
+                displayName = auth.currentUser!!.displayName ?: "مستخدم مسجل",
+                email = auth.currentUser!!.email,
+                isDemo = false
+            )
+        } else {
+            demoUser
+        }
+
+    fun signInAsDemoUser() {
+        demoUser = UserSession(
+            uid = "demo_offline_user_99",
+            displayName = "مستخدم تجريبي",
+            email = "demo@example.com",
+            isDemo = true
+        )
+    }
 
     suspend fun signInWithGoogle(): Result<AuthResult> {
         return try {
@@ -77,5 +103,6 @@ class AuthManager(private val context: Context) {
 
     fun signOut() {
         auth?.signOut()
+        demoUser = null
     }
 }
